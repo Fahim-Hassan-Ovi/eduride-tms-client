@@ -8,6 +8,7 @@ import DriversManager from './DriversManager.jsx';
 import RoutesManager from './RoutesManager.jsx';
 import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
+import LeafletMap from './LeafletMap.jsx';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -38,6 +39,12 @@ function App() {
     'Bus-102': { id: 'Bus-102', lat: 40.7580, lng: -73.9855, driver: 'Jane Smith', route: 'Route B' },
     'Bus-103': { id: 'Bus-103', lat: 40.7489, lng: -73.9680, driver: 'Mike Johnson', route: 'Route C' },
   });
+
+  // mock route paths (array of [lat, lng]) for demonstration and polylines
+  const [mockRoutes] = useState([
+    { id: 'R-001', name: 'Route A', path: [[40.715, -74.01], [40.72, -74.00], [40.73, -73.995]] },
+    { id: 'R-002', name: 'Route B', path: [[40.76, -73.99], [40.755, -73.985], [40.75, -73.98]] },
+  ]);
 
   // load persisted data
   useEffect(() => {
@@ -251,29 +258,29 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-sky-50">
+      <header className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <div className="bg-blue-600 p-2 rounded-lg">
+            <div className="flex items-center space-x-4">
+              <div className="bg-white/20 p-3 rounded-2xl shadow-lg backdrop-blur-sm">
                 <Bus className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-800">TMS Dashboard</h1>
-                <p className="text-sm text-gray-500">Real-time vehicle tracking</p>
+                <h1 className="text-xl font-bold">TMS Dashboard</h1>
+                <p className="text-sm opacity-80">Real-time vehicle tracking & operations</p>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-2 bg-blue-50 px-4 py-2 rounded-lg">
-                <User className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-medium text-gray-700 capitalize">{role}</span>
+              <div className="flex items-center space-x-2 bg-white/10 px-4 py-2 rounded-lg">
+                <User className="w-4 h-4 text-white" />
+                <span className="text-sm font-medium capitalize">{role}</span>
               </div>
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition"
+                className="flex items-center space-x-2 px-4 py-2 bg-white/10 rounded-lg hover:bg-white/20 transition"
               >
-                <LogOut className="w-4 h-4" />
+                <LogOut className="w-4 h-4 text-white" />
                 <span className="hidden sm:inline text-sm font-medium">Logout</span>
               </button>
             </div>
@@ -284,7 +291,7 @@ function App() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-xl shadow-md p-6 space-y-4">
+            <div className="glass-card rounded-2xl shadow-2xl p-6 space-y-4">
               <h2 className="text-lg font-semibold text-gray-800 flex items-center space-x-2">
                 <Navigation className="w-5 h-5 text-blue-600" />
                 <span>Control Panel</span>
@@ -294,10 +301,10 @@ function App() {
                 <button
                   onClick={() => setViewMode('assigned')}
                   disabled={role === 'admin'}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${
                     viewMode === 'assigned' && role !== 'admin'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg'
+                      : 'bg-white/60 text-slate-700 hover:bg-white/70'
                   } ${role === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <User className="w-5 h-5" />
@@ -307,10 +314,10 @@ function App() {
                 <button
                   onClick={() => setViewMode('all')}
                   disabled={role !== 'admin'}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition ${
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${
                     viewMode === 'all' || role === 'admin'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-lg'
+                      : 'bg-white/60 text-slate-700 hover:bg-white/70'
                   } ${role !== 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                   <Users className="w-5 h-5" />
@@ -318,23 +325,23 @@ function App() {
                 </button>
                 {/* Complaint buttons */}
                 {role === 'student' && (
-                  <button onClick={() => setActivePage('submitComplaint')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-gray-100 text-gray-700 hover:bg-gray-200">
+                  <button onClick={() => setActivePage('submitComplaint')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                     <span className="font-medium text-sm">Submit Complaint</span>
                   </button>
                 )}
 
                 {role === 'admin' && (
                   <div className="space-y-2">
-                    <button onClick={() => setActivePage('complaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-gray-100 text-gray-700 hover:bg-gray-200">
+                    <button onClick={() => setActivePage('complaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Complaints</span>
                     </button>
-                    <button onClick={() => setActivePage('buses')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-gray-100 text-gray-700 hover:bg-gray-200">
+                    <button onClick={() => setActivePage('buses')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Buses</span>
                     </button>
-                    <button onClick={() => setActivePage('drivers')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-gray-100 text-gray-700 hover:bg-gray-200">
+                    <button onClick={() => setActivePage('drivers')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Drivers</span>
                     </button>
-                    <button onClick={() => setActivePage('routes')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-gray-100 text-gray-700 hover:bg-gray-200">
+                    <button onClick={() => setActivePage('routes')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Routes</span>
                     </button>
                   </div>
@@ -367,39 +374,15 @@ function App() {
 
           <div className="lg:col-span-3">
             {activePage === 'live' && (
-              <div className="bg-white rounded-xl shadow-md overflow-hidden">
+              <div className="bg-white/60 glass-card rounded-2xl shadow-2xl overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
                   <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
                     <MapPin className="w-5 h-5" />
                     <span>Live Vehicle Tracking</span>
                   </h2>
                 </div>
-
-                <div className="relative h-96 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                  <div className="absolute inset-0 grid grid-cols-8 grid-rows-8">
-                    {[...Array(64)].map((_, i) => (
-                      <div key={i} className="border border-gray-300/30"></div>
-                    ))}
-                  </div>
-
-                  <div className="relative z-10 text-center">
-                    <MapPin className="w-16 h-16 text-blue-600 mx-auto mb-4 opacity-50" />
-                    <p className="text-2xl font-semibold text-gray-700">Google Map Simulation Area</p>
-                    <p className="text-sm text-gray-500 mt-2">Real-time vehicle positions update every 2 seconds</p>
-                  </div>
-
-                  {getFilteredVehicles().map((vehicle, index) => (
-                    <div
-                      key={vehicle.id}
-                      className="absolute bg-blue-600 text-white px-3 py-2 rounded-lg shadow-lg text-xs font-medium animate-pulse"
-                      style={{
-                        top: `${20 + index * 25}%`,
-                        left: `${15 + index * 20}%`,
-                      }}
-                    >
-                      {vehicle.id}
-                    </div>
-                  ))}
+                <div className="relative h-96">
+                  <LeafletMap vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
                 </div>
 
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
