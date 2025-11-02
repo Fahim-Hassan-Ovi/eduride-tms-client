@@ -1,102 +1,172 @@
 import { useState } from 'react';
 
 export default function BusesManager({ busesProp = [], drivers = [], routes = [], vehicles = [], onChange }) {
-  const [buses, setBuses] = useState(busesProp.length ? busesProp : [
-    { id: 'Bus-101', plate: 'ABC-101', vehicleId: vehicles[0]?.id || '', capacity: 40, upDriver: null, downDriver: null, route: routes[0]?.name || 'Route A', departure: '07:30' },
-  ]);
-  const [query, setQuery] = useState('');
-  const [filterRoute, setFilterRoute] = useState('');
+    const [buses, setBuses] = useState(busesProp.length ? busesProp : [
+        { id: 'Bus-101', plate: 'ABC-101', vehicleId: vehicles[0]?.id || '', capacity: 40, upDriver: null, downDriver: null, route: routes[0]?.name || 'Route A', departure: '07:30' },
+    ]);
+    const [query, setQuery] = useState('');
+    const [filterRoute, setFilterRoute] = useState('');
 
-  const addBus = () => {
-    const newBus = { id: `Bus-${Math.floor(Math.random()*900)+200}`, plate: 'NEW-PLT', capacity: 30, upDriver: null, downDriver: null, route: 'New Route', departure: '08:00' };
-    const updated = [newBus, ...buses];
-    setBuses(updated);
-    onChange && onChange(updated);
-  };
+    const addBus = () => {
+        const newBus = { id: `Bus-${Math.floor(Math.random() * 900) + 200}`, plate: 'NEW-PLT', vehicleId: vehicles[0]?.id || '', capacity: 30, upDriver: null, downDriver: null, route: routes[0]?.name || 'New Route', departure: '08:00' };
+        const updated = [newBus, ...buses];
+        setBuses(updated);
+        onChange && onChange(updated);
+    };
 
-  const filtered = buses.filter(b => b.id.toLowerCase().includes(query.toLowerCase()) || b.plate.toLowerCase().includes(query.toLowerCase()))
-    .filter(b => !filterRoute || b.route === filterRoute);
+    const filtered = buses.filter(b => b.id.toLowerCase().includes(query.toLowerCase()) || b.plate.toLowerCase().includes(query.toLowerCase()))
+        .filter(b => !filterRoute || b.route === filterRoute);
 
-  const assignDriver = (busId, role, driverId) => {
-    const updated = buses.map(b => b.id === busId ? { ...b, [role]: driverId } : b);
-    setBuses(updated);
-    onChange && onChange(updated);
-  };
+    const assignDriver = (busId, role, driverId) => {
+        const updated = buses.map(b => b.id === busId ? { ...b, [role]: driverId } : b);
+        setBuses(updated);
+        onChange && onChange(updated);
+    };
 
-  const updateField = (busId, field, value) => {
-    const updated = buses.map(b => b.id === busId ? { ...b, [field]: value } : b);
-    setBuses(updated);
-    onChange && onChange(updated);
-  };
+    const updateField = (busId, field, value) => {
+        const updated = buses.map(b => b.id === busId ? { ...b, [field]: value } : b);
+        setBuses(updated);
+        onChange && onChange(updated);
+    };
 
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-semibold">Buses</h2>
-        <div className="flex items-center space-x-2">
-          <input placeholder="Search bus id or plate" value={query} onChange={(e) => setQuery(e.target.value)} className="px-3 py-2 border rounded" />
-          <select value={filterRoute} onChange={(e) => setFilterRoute(e.target.value)} className="px-3 py-2 border rounded">
-            <option value="">All Routes</option>
-            {routes.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-          </select>
-          <button onClick={addBus} className="px-3 py-2 bg-blue-600 text-white rounded">Add Bus</button>
+    // --- Custom Class Definitions ---
+    const inputClass = "px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition duration-150 ease-in-out w-full";
+    const buttonClass = "px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition duration-150 ease-in-out";
+    const tableHeaderClass = "px-6 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-700 sticky top-0 bg-indigo-50 border-b border-gray-200";
+
+    // NEW CLASS: Select for the control panel (search bar area)
+    const controlSelectClass = "px-3 py-2 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white cursor-pointer transition duration-150 ease-in-out w-40";
+    
+    // NEW CLASS: Select for the table (wider to fit content)
+    const tableSelectClass = "px-3 py-1 border border-gray-300 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white cursor-pointer text-sm min-w-40 w-full"; // Added min-w-40 (or min-w-48) to force width
+    
+    // Adjusted class to give padding and ensure content fits
+    const tableDataClass = "px-6 py-4 whitespace-nowrap text-sm text-gray-800"; 
+    // Added an extra wide class for the driver/vehicle dropdowns
+    const wideTableDataClass = "px-6 py-4 whitespace-nowrap text-sm text-gray-800 w-48"; 
+
+
+    return (
+        <div className="p-8 bg-gray-50 min-h-screen"> 
+            <div className="max-w-7xl mx-auto">
+                {/* --- Header and Controls --- */}
+                <div className="flex items-center justify-between mb-6 p-4 bg-white rounded-xl shadow-lg border border-gray-100">
+                    <h2 className="text-3xl font-bold text-gray-800 tracking-tight">Fleet Assignment</h2>
+                    <div className="flex items-center space-x-3">
+                        <input
+                            placeholder="Search bus ID or Plate"
+                            value={query}
+                            onChange={(e) => setQuery(e.target.value)}
+                            className={`w-56 ${inputClass}`}
+                        />
+                        {/* Using the new controlSelectClass */}
+                        <select
+                            value={filterRoute}
+                            onChange={(e) => setFilterRoute(e.target.value)}
+                            className={controlSelectClass}
+                        >
+                            <option value="">All Routes</option>
+                            {routes.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                        </select>
+                        <button onClick={addBus} className={buttonClass}>
+                            + Add New Bus
+                        </button>
+                    </div>
+                </div>
+
+                {/* --- Enhanced Table Structure --- */}
+                <div className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-x-auto overflow-y-auto max-h-[70vh]">
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-indigo-50 sticky top-0 z-10">
+                            <tr>
+                                <th className={tableHeaderClass}>ID</th>
+                                <th className={tableHeaderClass}>Plate</th>
+                                <th className={tableHeaderClass}>Capacity</th>
+                                {/* Used wideTableDataClass headers to align column width */}
+                                <th className={`${tableHeaderClass} w-48`}>Vehicle</th>
+                                <th className={`${tableHeaderClass} w-48`}>Up Driver</th>
+                                <th className={`${tableHeaderClass} w-48`}>Down Driver</th>
+                                <th className={tableHeaderClass}>Route</th>
+                                <th className={tableHeaderClass}>Departure</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {filtered.map((b, index) => {
+                                // ... data finding logic remains the same
+                                
+                                return (
+                                    <tr 
+                                        key={b.id} 
+                                        className="odd:bg-white even:bg-gray-50 hover:bg-indigo-50 transition duration-150 ease-in-out" 
+                                    >
+                                        <td className={`font-medium text-indigo-600 ${tableDataClass}`}>{b.id}</td>
+                                        <td className={tableDataClass}>{b.plate}</td>
+                                        <td className={tableDataClass}>{b.capacity}</td>
+                                        
+                                        {/* Vehicle Dropdown (Using wideTableDataClass and tableSelectClass) */}
+                                        <td className={wideTableDataClass}>
+                                            <select
+                                                value={b.vehicleId || ''}
+                                                onChange={(e) => updateField(b.id, 'vehicleId', e.target.value)}
+                                                className={tableSelectClass} 
+                                            >
+                                                <option value="">-- select vehicle --</option>
+                                                {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.number})</option>)}
+                                            </select>
+                                        </td>
+                                        
+                                        {/* Up Driver Dropdown */}
+                                        <td className={wideTableDataClass}>
+                                            <select
+                                                value={b.upDriver || ''}
+                                                onChange={(e) => assignDriver(b.id, 'upDriver', e.target.value)}
+                                                className={tableSelectClass}
+                                            >
+                                                <option value="">-- assign --</option>
+                                                {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                        </td>
+                                        
+                                        {/* Down Driver Dropdown */}
+                                        <td className={wideTableDataClass}>
+                                            <select
+                                                value={b.downDriver || ''}
+                                                onChange={(e) => assignDriver(b.id, 'downDriver', e.target.value)}
+                                                className={tableSelectClass}
+                                            >
+                                                <option value="">-- assign --</option>
+                                                {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                            </select>
+                                        </td>
+                                        
+                                        {/* Route Dropdown */}
+                                        <td className={tableDataClass}>
+                                            <select
+                                                value={b.route || ''}
+                                                onChange={(e) => updateField(b.id, 'route', e.target.value)}
+                                                className={tableSelectClass}
+                                            >
+                                                <option value="">-- select route --</option>
+                                                {routes.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                                            </select>
+                                        </td>
+                                        
+                                        {/* Departure Input */}
+                                        <td className={tableDataClass}>
+                                            <input
+                                                type="time" 
+                                                value={b.departure}
+                                                onChange={(e) => updateField(b.id, 'departure', e.target.value)}
+                                                className={`py-1 ${inputClass} w-24 text-sm`} 
+                                            />
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
-      </div>
-
-      <div className="bg-white rounded shadow overflow-x-auto">
-        <table className="min-w-full">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-4 py-2 text-left">ID</th>
-              <th className="px-4 py-2 text-left">Plate</th>
-              <th className="px-4 py-2 text-left">Capacity</th>
-              <th className="px-4 py-2 text-left">Vehicle</th>
-              <th className="px-4 py-2 text-left">Up Driver</th>
-              <th className="px-4 py-2 text-left">Down Driver</th>
-              <th className="px-4 py-2 text-left">Route</th>
-              <th className="px-4 py-2 text-left">Departure</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map(b => (
-              <tr key={b.id} className="border-t">
-                <td className="px-4 py-2">{b.id}</td>
-                <td className="px-4 py-2">{b.plate}</td>
-                <td className="px-4 py-2">{b.capacity}</td>
-                <td className="px-4 py-2">
-                  <select value={b.vehicleId || ''} onChange={(e) => updateField(b.id, 'vehicleId', e.target.value)} className="px-2 py-1 border rounded">
-                    <option value="">-- select vehicle --</option>
-                    {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.number})</option>)}
-                  </select>
-                </td>
-                <td className="px-4 py-2">
-                  <select value={b.upDriver || ''} onChange={(e) => assignDriver(b.id, 'upDriver', e.target.value)} className="px-2 py-1 border rounded">
-                    <option value="">-- assign --</option>
-                    {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </td>
-                <td className="px-4 py-2">
-                  <select value={b.downDriver || ''} onChange={(e) => assignDriver(b.id, 'downDriver', e.target.value)} className="px-2 py-1 border rounded">
-                    <option value="">-- assign --</option>
-                    {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                  </select>
-                </td>
-                <td className="px-4 py-2">
-                  <select value={b.route || ''} onChange={(e) => updateField(b.id, 'route', e.target.value)} className="px-2 py-1 border rounded">
-                    <option value="">-- select route --</option>
-                    {routes.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
-                  </select>
-                </td>
-                <td className="px-4 py-2">
-                  <input value={b.departure} onChange={(e) => updateField(b.id, 'departure', e.target.value)} className="px-2 py-1 border rounded" />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+    );
 }
-
-
