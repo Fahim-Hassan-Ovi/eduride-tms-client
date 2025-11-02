@@ -83,8 +83,12 @@ export default function LeafletMap({ vehicles = [], routes = [], center = { lat:
         try { markersRef.current[v.id].setLatLng(pos); } catch(e){}
       } else {
         try {
-          const icon = L.divIcon({ className: 'leaflet-marker-custom', html: `<div style="background:#4f46e5;color:white;padding:6px 10px;border-radius:20px;font-weight:700">${v.id.split('-')[1]}</div>` });
-          const m = L.marker(pos, { icon }).addTo(mapRef.current).bindPopup(`<strong>${v.id}</strong><div>Driver: ${v.driver}</div><div>Route: ${v.route}</div>`);
+          const label = v.name || v.id;
+          const reg = v.regNumber ? `<div>Reg: ${v.regNumber}</div>` : '';
+          const pic = v.picture ? `<div class="mt-2"><img src="${v.picture}" alt="${label}" style="width:120px;height:auto;border-radius:6px;"/></div>` : '';
+          const html = `<div style="font-weight:700;color:white;background:#4f46e5;padding:6px 10px;border-radius:18px">${label}</div>`;
+          const icon = L.divIcon({ className: 'leaflet-marker-custom', html });
+          const m = L.marker(pos, { icon }).addTo(mapRef.current).bindPopup(`<div><strong>${label}</strong><div>Number: ${v.number}</div>${reg}<div>Driver: ${v.driver}</div><div>Route: ${v.route}</div>${pic}</div>`);
           markersRef.current[v.id] = m;
         } catch(err) { console.warn('marker add err', err); }
       }

@@ -9,6 +9,7 @@ import RoutesManager from './RoutesManager.jsx';
 import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
 import LeafletMap from './LeafletMap.jsx';
+import GoogleMapDev from './GoogleMapDev.jsx';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -34,17 +35,49 @@ function App() {
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [userProfiles, setUserProfiles] = useState([]);
 
-  const [vehicles, setVehicles] = useState({
-    'Bus-101': { id: 'Bus-101', lat: 40.7128, lng: -74.0060, driver: 'John Doe', route: 'Route A' },
-    'Bus-102': { id: 'Bus-102', lat: 40.7580, lng: -73.9855, driver: 'Jane Smith', route: 'Route B' },
-    'Bus-103': { id: 'Bus-103', lat: 40.7489, lng: -73.9680, driver: 'Mike Johnson', route: 'Route C' },
-  });
-
-  // mock route paths (array of [lat, lng]) for demonstration and polylines
+  // Use a realistic Dhaka -> Mymensingh highway mock route for demonstration
   const [mockRoutes] = useState([
-    { id: 'R-001', name: 'Route A', path: [[40.715, -74.01], [40.72, -74.00], [40.73, -73.995]] },
-    { id: 'R-002', name: 'Route B', path: [[40.76, -73.99], [40.755, -73.985], [40.75, -73.98]] },
+    {
+      id: 'R-DM-01',
+      name: 'Dhaka - Mymensingh Hwy',
+      path: [
+        [23.8103, 90.4125], // Dhaka
+        [23.8730, 90.3924], // Tongi area
+        [24.0000, 90.4115], // Gazipur
+        [24.2000, 90.3800], // north of Gazipur
+        [24.4000, 90.3900], // approaching Gafargaon
+        [24.5340, 90.3982], // Gafargaon
+        [24.6500, 90.4100], // near Ishwarganj
+        [24.7471, 90.4203], // Mymensingh
+      ],
+    },
   ]);
+
+  // Vehicles: include rich metadata and multiple mock vehicles
+  const [vehicles, setVehicles] = useState({
+    'Bus-DM-01': {
+      id: 'Bus-DM-01',
+      name: 'Express Line A',
+      number: 'DM-01',
+      regNumber: 'KA-12-3456',
+      picture: 'https://placehold.co/80x50?text=Bus+DM-01',
+      lat: 23.8103,
+      lng: 90.4125,
+      driver: 'Rashed',
+      route: 'Dhaka - Mymensingh Hwy',
+    },
+    'Bus-DM-02': {
+      id: 'Bus-DM-02',
+      name: 'InterCity 2',
+      number: 'DM-02',
+      regNumber: 'KA-12-3457',
+      picture: 'https://placehold.co/80x50?text=Bus+DM-02',
+      lat: 23.9000,
+      lng: 90.4000,
+      driver: 'Mamun',
+      route: 'Dhaka - Mymensingh Hwy',
+    },
+  });
 
   // load persisted data
   useEffect(() => {
@@ -382,7 +415,11 @@ function App() {
                   </h2>
                 </div>
                 <div className="relative h-96">
-                  <LeafletMap vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
+                  {
+                    import.meta.env.VITE_MAP_PROVIDER === 'google'
+                      ? <GoogleMapDev vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
+                      : <LeafletMap vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
+                  }
                 </div>
 
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">

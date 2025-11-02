@@ -16,6 +16,8 @@ export default function RoutesManager() {
       .sort((a,b) => (a[sortKey] > b[sortKey] ? 1 : -1));
   }, [routes, query, sortKey]);
 
+  const [editingPath, setEditingPath] = useState('');
+
   const addRoute = () => {
     const newRoute = {
       id: `R-${String(Math.floor(Math.random()*900)+100)}`,
@@ -25,8 +27,26 @@ export default function RoutesManager() {
       stops: 3,
       departure: '09:00',
       arrival: '09:45',
+      path: [],
     };
     setRoutes(prev => [newRoute, ...prev]);
+  };
+
+  const startEdit = (r) => {
+    setEditingPath(r.path ? r.path.map(p => p.join(',')).join('\n') : '');
+  };
+
+  const savePath = (id) => {
+    const lines = editingPath.split('\n').map(l => l.trim()).filter(Boolean);
+    const path = lines.map(l => { const [lat,lng] = l.split(',').map(Number); return [lat, lng]; });
+    setRoutes(prev => prev.map(r => r.id === id ? { ...r, path } : r));
+    setEditingPath('');
+  };
+
+  const handleSaveCurrentPath = () => {
+    const found = routes.find(r => r.path && r.path.map(p => p.join(',')).join('\n') === editingPath);
+    const id = found ? found.id : (routes[0] ? routes[0].id : undefined);
+    if (id) savePath(id);
   };
 
   return (
@@ -72,8 +92,8 @@ export default function RoutesManager() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.arrival}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <div className="inline-flex items-center space-x-2">
-                    <button className="p-2 rounded-md bg-yellow-50 text-yellow-600"><Edit className="w-4 h-4" /></button>
-                    <button className="p-2 rounded-md bg-red-50 text-red-600"><Trash className="w-4 h-4" /></button>
+                    <button onClick={() => startEdit(r)} className="p-2 rounded-md bg-yellow-50 text-yellow-600"><Edit className="w-4 h-4" /></button>
+                    <button onClick={() => setRoutes(prev => prev.filter(pr => pr.id !== r.id))} className="p-2 rounded-md bg-red-50 text-red-600"><Trash className="w-4 h-4" /></button>
                   </div>
                 </td>
               </tr>
@@ -81,6 +101,17 @@ export default function RoutesManager() {
           </tbody>
         </table>
       </div>
+
+      {editingPath !== '' && (
+        <div className="mt-4 bg-white rounded shadow p-4">
+          <h3 className="font-semibold mb-2">Edit Route Path (lat,lng per line)</h3>
+          <textarea value={editingPath} onChange={(e) => setEditingPath(e.target.value)} rows={6} className="w-full border rounded p-2"></textarea>
+          <div className="mt-2 flex justify-end space-x-2">
+            <button onClick={() => setEditingPath('')} className="px-3 py-1 bg-gray-100 rounded">Cancel</button>
+            <button onClick={handleSaveCurrentPath} className="px-3 py-1 bg-blue-600 text-white rounded">Save Path</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
