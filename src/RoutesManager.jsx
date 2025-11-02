@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
+import { apiFetch } from './utils/api';
 import { Plus, Edit, Trash } from 'lucide-react';
 
-export default function RoutesManager() {
-  const [routes, setRoutes] = useState([
+export default function RoutesManager({ routesProp = [], token = '', onChange }) {
+  const [routes, setRoutes] = useState(routesProp.length ? routesProp : [
     { id: 'R-001', name: 'Route A', start: 'School', end: 'Downtown', stops: 6, departure: '07:30', arrival: '08:15' },
     { id: 'R-002', name: 'Route B', start: 'North Gate', end: 'East Park', stops: 4, departure: '08:00', arrival: '08:40' },
   ]);
@@ -29,7 +30,14 @@ export default function RoutesManager() {
       arrival: '09:45',
       path: [],
     };
-    setRoutes(prev => [newRoute, ...prev]);
+    (async () => {
+      try {
+        const res = await apiFetch('/api/routes', { method: 'POST', body: JSON.stringify(newRoute) });
+        const doc = await res.json();
+        setRoutes(prev => [doc, ...prev]);
+        onChange && onChange([doc, ...routes]);
+      } catch (e) { console.warn('create route failed', e); setRoutes(prev => [newRoute, ...prev]); onChange && onChange([newRoute, ...routes]); }
+    })();
   };
 
   const startEdit = (r) => {
@@ -39,8 +47,15 @@ export default function RoutesManager() {
   const savePath = (id) => {
     const lines = editingPath.split('\n').map(l => l.trim()).filter(Boolean);
     const path = lines.map(l => { const [lat,lng] = l.split(',').map(Number); return [lat, lng]; });
-    setRoutes(prev => prev.map(r => r.id === id ? { ...r, path } : r));
-    setEditingPath('');
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/routes/${id}`, { method: 'PUT', body: JSON.stringify({ path }) });
+        const doc = await res.json();
+        setRoutes(prev => prev.map(r => r.id === id ? doc : r));
+        onChange && onChange(routes.map(r => r.id === id ? doc : r));
+      } catch (e) { console.warn('save path failed', e); setRoutes(prev => prev.map(r => r.id === id ? { ...r, path } : r)); onChange && onChange(routes); }
+      setEditingPath('');
+    })();
   };
 
   const handleSaveCurrentPath = () => {
@@ -93,7 +108,13 @@ export default function RoutesManager() {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <div className="inline-flex items-center space-x-2">
                     <button onClick={() => startEdit(r)} className="p-2 rounded-md bg-yellow-50 text-yellow-600"><Edit className="w-4 h-4" /></button>
-                    <button onClick={() => setRoutes(prev => prev.filter(pr => pr.id !== r.id))} className="p-2 rounded-md bg-red-50 text-red-600"><Trash className="w-4 h-4" /></button>
+                    <button onClick={async () => {
+                        try {
+                          await fetch(`/api/routes/${r.id}`, { method: 'DELETE', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+                          setRoutes(prev => prev.filter(pr => pr.id !== r.id));
+                          onChange && onChange(routes.filter(pr => pr.id !== r.id));
+                        } catch(e) { console.warn('delete route failed', e); setRoutes(prev => prev.filter(pr => pr.id !== r.id)); }
+                    }} className="p-2 rounded-md bg-red-50 text-red-600"><Trash className="w-4 h-4" /></button>
                   </div>
                 </td>
               </tr>

@@ -53,51 +53,55 @@ function App() {
     },
   ]);
 
-  // Vehicles: include rich metadata and multiple mock vehicles
-  const [vehicles, setVehicles] = useState({
-    'Bus-DM-01': {
-      id: 'Bus-DM-01',
-      name: 'Express Line A',
-      number: 'DM-01',
-      regNumber: 'KA-12-3456',
-      picture: 'https://placehold.co/80x50?text=Bus+DM-01',
-      lat: 23.8103,
-      lng: 90.4125,
-      driver: 'Rashed',
-      route: 'Dhaka - Mymensingh Hwy',
-    },
-    'Bus-DM-02': {
-      id: 'Bus-DM-02',
-      name: 'InterCity 2',
-      number: 'DM-02',
-      regNumber: 'KA-12-3457',
-      picture: 'https://placehold.co/80x50?text=Bus+DM-02',
-      lat: 23.9000,
-      lng: 90.4000,
-      driver: 'Mamun',
-      route: 'Dhaka - Mymensingh Hwy',
-    },
+  // Vehicles state will be loaded from API; store as map by id for quick lookup
+  const [vehicles, setVehicles] = useState({});
+  const [routes, setRoutes] = useState([]);
+
+  // auth
+  const [token, setToken] = useState(() => localStorage.getItem('tms_token') || '');
+  const [currentUser, setCurrentUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tms_user') || 'null'); } catch(e){ return null; }
   });
 
-  // load persisted data
-  useEffect(() => {
-    const v = localStorage.getItem('tms:vehicles');
-    if (v) setVehicles(JSON.parse(v));
-    const c = localStorage.getItem('tms:complaints');
-    if (c) setComplaints(JSON.parse(c));
-    const b = localStorage.getItem('tms:buses');
-    if (b) setBuses(JSON.parse(b));
-    const d = localStorage.getItem('tms:drivers');
-    if (d) setDrivers(JSON.parse(d));
-    const p = localStorage.getItem('tms:profiles');
-    if (p) setUserProfiles(JSON.parse(p));
-  }, []);
+  const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
 
-  useEffect(() => { localStorage.setItem('tms:vehicles', JSON.stringify(vehicles)); }, [vehicles]);
-  useEffect(() => { localStorage.setItem('tms:complaints', JSON.stringify(complaints)); }, [complaints]);
-  useEffect(() => { localStorage.setItem('tms:buses', JSON.stringify(buses)); }, [buses]);
-  useEffect(() => { localStorage.setItem('tms:drivers', JSON.stringify(drivers)); }, [drivers]);
-  useEffect(() => { localStorage.setItem('tms:profiles', JSON.stringify(userProfiles)); }, [userProfiles]);
+
+  const apiFetch = async (url, options = {}) => {
+    const headers = options.headers || {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+    const fullUrl = url.startsWith('http') ? url : `${API_BASE}${url}`;
+    const res = await fetch(fullUrl, { ...options, headers });
+    return res;
+  };
+
+  // load data from API on mount
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const [vRes, rRes, dRes, bRes, cRes] = await Promise.all([
+          apiFetch('/api/vehicles'),
+          apiFetch('/api/routes'),
+          apiFetch('/api/drivers'),
+          apiFetch('/api/buses'),
+          apiFetch('/api/complaints'),
+        ]);
+        const [vJson, rJson, dJson, bJson, cJson] = await Promise.all([vRes.json(), rRes.json(), dRes.json(), bRes.json(), cRes.json()]);
+        // vehicles API returns { items, page } or plain array depending on auth; normalize
+        const vItems = Array.isArray(vJson) ? vJson : (vJson.items || []);
+        const vehiclesMap = {};
+        vItems.forEach(v => { vehiclesMap[v.id] = v; });
+        setVehicles(vehiclesMap);
+        setRoutes(rJson.items || rJson);
+        setDrivers(dJson.items || dJson);
+        setBuses(bJson.items || bJson);
+        setComplaints(cJson.items || cJson);
+      } catch (err) {
+        console.warn('Error loading API data', err);
+      }
+    };
+    load();
+  }, [token]);
 
 
   useEffect(() => {
@@ -124,7 +128,7 @@ function App() {
     return () => clearInterval(interval);
   }, [isLoggedIn]);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
     const newErrors = { username: '', password: '' };
 
@@ -136,13 +140,22 @@ function App() {
     }
 
     setErrors(newErrors);
+    if (newErrors.username || newErrors.password) return;
 
-    if (!newErrors.username && !newErrors.password) {
-      setRole(selectedRole);
+    try {
+      const res = await apiFetch('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: username, password }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Login failed');
+      setToken(data.token);
+      localStorage.setItem('tms_token', data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem('tms_user', JSON.stringify(data.user));
+      setRole(data.user.role || selectedRole);
       setIsLoggedIn(true);
-      // show location modal after successful login
       setShowLocationModal(true);
       setActivePage('live');
+    } catch (err) {
+      setErrors({ ...newErrors, username: err.message });
     }
   };
 
@@ -161,37 +174,55 @@ function App() {
   };
 
   const addComplaint = (complaint) => {
-    setComplaints(prev => [complaint, ...prev]);
-    alert('Complaint submitted');
+    // persist to API
+    (async () => {
+      try {
+        const res = await apiFetch('/api/complaints', { method: 'POST', body: JSON.stringify(complaint) });
+        const doc = await res.json();
+        setComplaints(prev => [doc, ...prev]);
+      } catch (e) { console.warn('submit complaint failed', e); setComplaints(prev => [complaint, ...prev]); }
+    })();
   };
 
   const updateComplaintFeedback = (id, update) => {
-    setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...update } : c));
+    (async () => {
+      try {
+        const res = await apiFetch(`/api/complaints/${id}`, { method: 'PUT', body: JSON.stringify(update) });
+        const doc = await res.json();
+        setComplaints(prev => prev.map(c => c.id === id ? doc : c));
+      } catch (e) { console.warn('update complaint failed', e); setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...update } : c)); }
+    })();
   };
 
-  const handleRegister = (user, password) => {
-    setUserProfiles(prev => [user, ...prev]);
-    // store minimal auth map (mock) as localStorage
-    const authMap = JSON.parse(localStorage.getItem('tms:auth') || '{}');
-    authMap[user.email] = { password, id: user.id };
-    localStorage.setItem('tms:auth', JSON.stringify(authMap));
-    alert('Account created (mock)');
-    setAuthView('login');
+  const handleRegister = async (user, password) => {
+    try {
+      const res = await apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: user.email, password, name: user.name, role: user.role }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Register failed');
+      setToken(data.token);
+      localStorage.setItem('tms_token', data.token);
+      setCurrentUser(data.user);
+      localStorage.setItem('tms_user', JSON.stringify(data.user));
+      setIsLoggedIn(true);
+      setShowLocationModal(true);
+    } catch (e) {
+      alert('Register failed: ' + e.message);
+    }
   };
 
   const handleRegisterDriver = (driver) => {
-    // create a minimal profile for driver and add to auth map as mock (no password)
-    const profile = { id: driver.id, name: driver.name, email: driver.email || '', role: 'driver' };
-    setUserProfiles(prev => [profile, ...prev]);
-    const authMap = JSON.parse(localStorage.getItem('tms:auth') || '{}');
-    if (driver.email) authMap[driver.email] = { password: '', id: driver.id };
-    localStorage.setItem('tms:auth', JSON.stringify(authMap));
-    alert('Driver registered (mock)');
+    (async () => {
+      try {
+        const res = await apiFetch('/api/drivers', { method: 'POST', body: JSON.stringify(driver) });
+        const doc = await res.json();
+        setDrivers(prev => [doc, ...prev]);
+      } catch (e) { console.warn('register driver failed', e); setDrivers(prev => [driver, ...prev]); }
+    })();
   };
 
   const handleSaveProfile = (updated) => {
     setUserProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
-    alert('Profile saved (mock)');
+    // optionally persist to API - left as mock for now
   };
 
   // Driver location watch: when a driver allows location, start watch and update their vehicle if matched
@@ -449,13 +480,13 @@ function App() {
               <ComplaintsAdmin complaints={complaints} onUpdate={updateComplaintFeedback} onBack={() => setActivePage('live')} />
             )}
             {activePage === 'buses' && (
-              <BusesManager busesProp={buses} drivers={drivers} onChange={(updated) => setBuses(updated)} />
+              <BusesManager busesProp={buses} drivers={drivers} routes={routes} vehicles={vehicles} token={token} onChange={(updated) => setBuses(updated)} />
             )}
             {activePage === 'drivers' && (
-              <DriversManager driversProp={drivers} onChange={(updated) => setDrivers(updated)} onRegisterDriver={handleRegisterDriver} />
+              <DriversManager driversProp={drivers} token={token} onChange={(updated) => setDrivers(updated)} onRegisterDriver={handleRegisterDriver} />
             )}
             {activePage === 'routes' && (
-              <RoutesManager />
+              <RoutesManager routesProp={routes} token={token} onChange={(updated) => setRoutes(updated)} />
             )}
           </div>
         </div>

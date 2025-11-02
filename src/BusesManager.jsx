@@ -1,32 +1,50 @@
 import { useState } from 'react';
+import { apiFetch } from './utils/api';
 
-export default function BusesManager({ busesProp = [], drivers = [], routes = [], vehicles = [], onChange }) {
+export default function BusesManager({ busesProp = [], drivers = [], routes = [], vehicles = [], token = '', onChange }) {
     const [buses, setBuses] = useState(busesProp.length ? busesProp : [
         { id: 'Bus-101', plate: 'ABC-101', vehicleId: vehicles[0]?.id || '', capacity: 40, upDriver: null, downDriver: null, route: routes[0]?.name || 'Route A', departure: '07:30' },
     ]);
     const [query, setQuery] = useState('');
     const [filterRoute, setFilterRoute] = useState('');
 
-    const addBus = () => {
-        const newBus = { id: `Bus-${Math.floor(Math.random() * 900) + 200}`, plate: 'NEW-PLT', vehicleId: vehicles[0]?.id || '', capacity: 30, upDriver: null, downDriver: null, route: routes[0]?.name || 'New Route', departure: '08:00' };
-        const updated = [newBus, ...buses];
-        setBuses(updated);
-        onChange && onChange(updated);
+    const vehiclesList = Array.isArray(vehicles) ? vehicles : Object.values(vehicles || {});
+
+    const addBus = async () => {
+        const newBus = { id: `Bus-${Math.floor(Math.random() * 900) + 200}`, plate: 'NEW-PLT', vehicleId: vehiclesList[0]?.id || '', capacity: 30, upDriver: null, downDriver: null, route: routes[0]?.name || 'New Route', departure: '08:00' };
+        try {
+          const res = await apiFetch('/api/buses', { method: 'POST', body: JSON.stringify(newBus) });
+          const doc = await res.json();
+          const updated = [doc, ...buses];
+          setBuses(updated);
+          onChange && onChange(updated);
+        } catch (e) {
+          console.warn('add bus failed', e);
+          const updated = [newBus, ...buses];
+          setBuses(updated);
+          onChange && onChange(updated);
+        }
     };
 
     const filtered = buses.filter(b => b.id.toLowerCase().includes(query.toLowerCase()) || b.plate.toLowerCase().includes(query.toLowerCase()))
         .filter(b => !filterRoute || b.route === filterRoute);
 
-    const assignDriver = (busId, role, driverId) => {
+    const assignDriver = async (busId, role, driverId) => {
         const updated = buses.map(b => b.id === busId ? { ...b, [role]: driverId } : b);
         setBuses(updated);
         onChange && onChange(updated);
+        try {
+          await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify({ [role]: driverId }) });
+        } catch (e) { console.warn('assign driver failed', e); }
     };
 
-    const updateField = (busId, field, value) => {
+    const updateField = async (busId, field, value) => {
         const updated = buses.map(b => b.id === busId ? { ...b, [field]: value } : b);
         setBuses(updated);
         onChange && onChange(updated);
+        try {
+          await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
+        } catch (e) { console.warn('update bus field failed', e); }
     };
 
     // --- Custom Class Definitions ---
@@ -159,6 +177,17 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                                 onChange={(e) => updateField(b.id, 'departure', e.target.value)}
                                                 className={`py-1 ${inputClass} w-24 text-sm`} 
                                             />
+                                        </td>
+                                        {/* Actions */}
+                                        <td className={tableDataClass}>
+                                            <button onClick={async () => {
+                                                try {
+                                                    await apiFetch(`/api/buses/${b.id}`, { method: 'DELETE' });
+                                                    const updated = buses.filter(x => x.id !== b.id);
+                                                    setBuses(updated);
+                                                    onChange && onChange(updated);
+                                                } catch (e) { console.warn('delete bus failed', e); }
+                                            }} className="px-2 py-1 bg-red-50 text-red-600 rounded">Delete</button>
                                         </td>
                                     </tr>
                                 );
