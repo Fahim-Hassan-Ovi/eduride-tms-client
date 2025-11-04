@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { apiFetch } from './utils/api';
+import BusFormModal from './BusFormModal.jsx';
 
 export default function BusesManager({ busesProp = [], drivers = [], routes = [], vehicles = [], token = '', onChange }) {
     const [buses, setBuses] = useState(busesProp.length ? busesProp : [
@@ -10,41 +11,52 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
 
     const vehiclesList = Array.isArray(vehicles) ? vehicles : Object.values(vehicles || {});
 
+    const [showCreateModal, setShowCreateModal] = useState(false);
+
     const addBus = async () => {
-        const newBus = { id: `Bus-${Math.floor(Math.random() * 900) + 200}`, plate: 'NEW-PLT', vehicleId: vehiclesList[0]?.id || '', capacity: 30, upDriver: null, downDriver: null, route: routes[0]?.name || 'New Route', departure: '08:00' };
+        setShowCreateModal(true);
+    };
+
+    const qLower = (query || '').toLowerCase();
+    const filtered = (buses || []).filter(b => {
+        const id = (b && b.id) ? String(b.id).toLowerCase() : '';
+        const plate = (b && b.plate) ? String(b.plate).toLowerCase() : '';
+        return id.includes(qLower) || plate.includes(qLower);
+    }).filter(b => !filterRoute || b.route === filterRoute);
+
+    // edits are staged locally until saved to API
+    const [editedRows, setEditedRows] = useState({});
+
+    const startEdit = (id) => {
+        const row = buses.find(b => b.id === id);
+        setEditedRows(prev => ({ ...prev, [id]: { ...row } }));
+    };
+
+    const cancelEdit = (id) => {
+        setEditedRows(prev => { const copy = { ...prev }; delete copy[id]; return copy; });
+    };
+
+    const assignDriver = (busId, role, driverId) => {
+        setEditedRows(prev => ({ ...prev, [busId]: { ...(prev[busId] || buses.find(b => b.id === busId)), [role]: driverId } }));
+    };
+
+    const updateField = (busId, field, value) => {
+        setEditedRows(prev => ({ ...prev, [busId]: { ...(prev[busId] || buses.find(b => b.id === busId)), [field]: value } }));
+    };
+
+    const saveRow = async (busId) => {
+        const payload = editedRows[busId];
+        if (!payload) return;
         try {
-          const res = await apiFetch('/api/buses', { method: 'POST', body: JSON.stringify(newBus) });
-          const doc = await res.json();
-          const updated = [doc, ...buses];
-          setBuses(updated);
-          onChange && onChange(updated);
+            const res = await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify(payload) });
+            const doc = await res.json();
+            const updated = buses.map(b => b.id === busId ? doc : b);
+            setBuses(updated);
+            onChange && onChange(updated);
+            cancelEdit(busId);
         } catch (e) {
-          console.warn('add bus failed', e);
-          const updated = [newBus, ...buses];
-          setBuses(updated);
-          onChange && onChange(updated);
+            console.warn('save row failed', e);
         }
-    };
-
-    const filtered = buses.filter(b => b.id.toLowerCase().includes(query.toLowerCase()) || b.plate.toLowerCase().includes(query.toLowerCase()))
-        .filter(b => !filterRoute || b.route === filterRoute);
-
-    const assignDriver = async (busId, role, driverId) => {
-        const updated = buses.map(b => b.id === busId ? { ...b, [role]: driverId } : b);
-        setBuses(updated);
-        onChange && onChange(updated);
-        try {
-          await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify({ [role]: driverId }) });
-        } catch (e) { console.warn('assign driver failed', e); }
-    };
-
-    const updateField = async (busId, field, value) => {
-        const updated = buses.map(b => b.id === busId ? { ...b, [field]: value } : b);
-        setBuses(updated);
-        onChange && onChange(updated);
-        try {
-          await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify({ [field]: value }) });
-        } catch (e) { console.warn('update bus field failed', e); }
     };
 
     // --- Custom Class Definitions ---
@@ -91,6 +103,17 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                         </button>
                     </div>
                 </div>
+                {showCreateModal && (
+                  <BusFormModal vehicles={vehiclesList} routes={routes} onCancel={() => setShowCreateModal(false)} onSubmit={async (bus) => {
+                    try {
+                      const res = await apiFetch('/api/buses', { method: 'POST', body: JSON.stringify(bus) });
+                      const doc = await res.json();
+                      setBuses(prev => [doc, ...prev]);
+                      onChange && onChange([doc, ...buses]);
+                    } catch (e) { console.warn('create bus failed', e); setBuses(prev => [bus, ...prev]); onChange && onChange([bus, ...buses]); }
+                    setShowCreateModal(false);
+                  }} />
+                )}
 
                 {/* --- Enhanced Table Structure --- */}
                 <div className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-x-auto overflow-y-auto max-h-[70vh]">
@@ -114,7 +137,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                 
                                 return (
                                     <tr 
-                                        key={b.id} 
+                                        key={b.id || index} 
                                         className="odd:bg-white even:bg-gray-50 hover:bg-indigo-50 transition duration-150 ease-in-out" 
                                     >
                                         <td className={`font-medium text-indigo-600 ${tableDataClass}`}>{b.id}</td>
@@ -124,19 +147,19 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                         {/* Vehicle Dropdown (Using wideTableDataClass and tableSelectClass) */}
                                         <td className={wideTableDataClass}>
                                             <select
-                                                value={b.vehicleId || ''}
+                                                value={(editedRows[b.id]?.vehicleId ?? b.vehicleId) || ''}
                                                 onChange={(e) => updateField(b.id, 'vehicleId', e.target.value)}
                                                 className={tableSelectClass} 
                                             >
                                                 <option value="">-- select vehicle --</option>
-                                                {vehicles.map(v => <option key={v.id} value={v.id}>{v.name} ({v.number})</option>)}
+                                                {vehiclesList.map(v => <option key={v.id} value={v.id}>{v.name} ({v.number})</option>)}
                                             </select>
                                         </td>
                                         
                                         {/* Up Driver Dropdown */}
                                         <td className={wideTableDataClass}>
                                             <select
-                                                value={b.upDriver || ''}
+                                                value={(editedRows[b.id]?.upDriver ?? b.upDriver) || ''}
                                                 onChange={(e) => assignDriver(b.id, 'upDriver', e.target.value)}
                                                 className={tableSelectClass}
                                             >
@@ -148,7 +171,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                         {/* Down Driver Dropdown */}
                                         <td className={wideTableDataClass}>
                                             <select
-                                                value={b.downDriver || ''}
+                                                value={(editedRows[b.id]?.downDriver ?? b.downDriver) || ''}
                                                 onChange={(e) => assignDriver(b.id, 'downDriver', e.target.value)}
                                                 className={tableSelectClass}
                                             >
@@ -160,7 +183,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                         {/* Route Dropdown */}
                                         <td className={tableDataClass}>
                                             <select
-                                                value={b.route || ''}
+                                                value={(editedRows[b.id]?.route ?? b.route) || ''}
                                                 onChange={(e) => updateField(b.id, 'route', e.target.value)}
                                                 className={tableSelectClass}
                                             >
@@ -173,21 +196,31 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                         <td className={tableDataClass}>
                                             <input
                                                 type="time" 
-                                                value={b.departure}
+                                                value={(editedRows[b.id]?.departure ?? b.departure) || ''}
                                                 onChange={(e) => updateField(b.id, 'departure', e.target.value)}
                                                 className={`py-1 ${inputClass} w-24 text-sm`} 
                                             />
                                         </td>
                                         {/* Actions */}
                                         <td className={tableDataClass}>
-                                            <button onClick={async () => {
-                                                try {
-                                                    await apiFetch(`/api/buses/${b.id}`, { method: 'DELETE' });
-                                                    const updated = buses.filter(x => x.id !== b.id);
-                                                    setBuses(updated);
-                                                    onChange && onChange(updated);
-                                                } catch (e) { console.warn('delete bus failed', e); }
-                                            }} className="px-2 py-1 bg-red-50 text-red-600 rounded">Delete</button>
+                                            {!editedRows[b.id] ? (
+                                              <div className="flex items-center gap-2">
+                                                <button onClick={() => startEdit(b.id)} className="px-2 py-1 bg-yellow-50 text-yellow-700 rounded">Edit</button>
+                                                <button onClick={async () => {
+                                                    try {
+                                                        await apiFetch(`/api/buses/${b.id}`, { method: 'DELETE' });
+                                                        const updated = buses.filter(x => x.id !== b.id);
+                                                        setBuses(updated);
+                                                        onChange && onChange(updated);
+                                                    } catch (e) { console.warn('delete bus failed', e); }
+                                                }} className="px-2 py-1 bg-red-50 text-red-600 rounded">Delete</button>
+                                              </div>
+                                            ) : (
+                                              <div className="flex items-center gap-2">
+                                                <button onClick={() => saveRow(b.id)} className="px-2 py-1 bg-green-600 text-white rounded">Save</button>
+                                                <button onClick={() => cancelEdit(b.id)} className="px-2 py-1 bg-gray-100 rounded">Cancel</button>
+                                              </div>
+                                            )}
                                         </td>
                                     </tr>
                                 );

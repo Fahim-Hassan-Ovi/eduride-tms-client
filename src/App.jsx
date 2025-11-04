@@ -10,6 +10,7 @@ import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
 import LeafletMap from './LeafletMap.jsx';
 import GoogleMapDev from './GoogleMapDev.jsx';
+import VehicleManager from './VehicleManager.jsx';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -89,9 +90,7 @@ function App() {
         const [vJson, rJson, dJson, bJson, cJson] = await Promise.all([vRes.json(), rRes.json(), dRes.json(), bRes.json(), cRes.json()]);
         // vehicles API returns { items, page } or plain array depending on auth; normalize
         const vItems = Array.isArray(vJson) ? vJson : (vJson.items || []);
-        const vehiclesMap = {};
-        vItems.forEach(v => { vehiclesMap[v.id] = v; });
-        setVehicles(vehiclesMap);
+        setVehicles(vItems);
         setRoutes(rJson.items || rJson);
         setDrivers(dJson.items || dJson);
         setBuses(bJson.items || bJson);
@@ -168,9 +167,9 @@ function App() {
 
   const getFilteredVehicles = () => {
     if (role === 'admin' || viewMode === 'all') {
-      return Object.values(vehicles);
+      return Array.isArray(vehicles) ? vehicles : Object.values(vehicles);
     }
-    return Object.values(vehicles).slice(0, 1);
+    return (Array.isArray(vehicles) ? vehicles : Object.values(vehicles)).slice(0, 1);
   };
 
   const addComplaint = (complaint) => {
@@ -408,6 +407,12 @@ function App() {
                     <button onClick={() => setActivePage('routes')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Routes</span>
                     </button>
+                    <button onClick={() => setActivePage('vehicles')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Manage Vehicles</span>
+                    </button>
+                    <button onClick={() => setActivePage('users')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Manage Users</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -487,6 +492,12 @@ function App() {
             )}
             {activePage === 'routes' && (
               <RoutesManager routesProp={routes} token={token} onChange={(updated) => setRoutes(updated)} />
+            )}
+            {activePage === 'vehicles' && (
+              <VehicleManager vehiclesProp={vehicles} token={token} onChange={(updated) => setVehicles(updated)} />
+            )}
+            {activePage === 'users' && (
+              <UserAccess token={token} />
             )}
           </div>
         </div>

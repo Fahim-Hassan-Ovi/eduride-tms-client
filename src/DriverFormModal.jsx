@@ -4,11 +4,19 @@ export default function DriverFormModal({ onCancel, onSubmit }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
+  const [pictureData, setPictureData] = useState('');
+
+  const handleFile = (file) => {
+    if (!file) { setPictureData(''); return; }
+    const reader = new FileReader();
+    reader.onload = () => setPictureData(reader.result.toString());
+    reader.readAsDataURL(file);
+  };
 
   const submit = (e) => {
     e.preventDefault();
     if (!name.trim()) return alert('Name required');
-    const driver = { id: `D-${Date.now()}`, name: name.trim(), phone: phone.trim(), email: email.trim() };
+    const driver = { id: `D-${Date.now()}`, name: name.trim(), phone: phone.trim(), email: email.trim(), picture: pictureData };
     onSubmit && onSubmit(driver);
   };
 
@@ -28,6 +36,11 @@ export default function DriverFormModal({ onCancel, onSubmit }) {
           <div>
             <label className="block text-sm">Email (optional)</label>
             <input value={email} onChange={(e) => setEmail(e.target.value)} className="w-full px-3 py-2 border rounded" />
+          </div>
+          <div>
+            <label className="block text-sm">Picture (optional)</label>
+            <input type="file" accept="image/*" onChange={(e) => handleFile(e.target.files[0])} className="w-full" />
+            {pictureData && <img src={pictureData} alt="preview" className="mt-2 w-24 h-auto rounded" />}
           </div>
           <div className="flex justify-end space-x-2">
             <button type="button" onClick={onCancel} className="px-3 py-2 bg-gray-100 rounded">Cancel</button>

@@ -1,21 +1,47 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import UserFormModal from './UserFormModal.jsx';
+import { apiFetch } from './utils/api';
 
 const roles = ['student','teacher','admin','staff','driver'];
 
-export default function UserAccess() {
-  const [users, setUsers] = useState([
-    { id: 'U-100', name: 'Alice Johnson', email: 'alice@example.com', role: 'student' },
-    { id: 'U-101', name: 'Bob Smith', email: 'bob@example.com', role: 'teacher' },
-    { id: 'U-102', name: 'Clara Lee', email: 'clara@example.com', role: 'driver' },
-  ]);
+export default function UserAccess({ token }) {
+  const [users, setUsers] = useState([]);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const changeRole = (userId, newRole) => {
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await apiFetch('/api/auth/users');
+        const data = await res.json();
+        setUsers(data.items || data || []);
+      } catch (e) {
+        // fallback to empty list
+        setUsers([]);
+      }
+    })();
+  }, []);
+
+  const changeRole = async (userId, newRole) => {
     setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+    try {
+      await apiFetch(`/api/users/${userId}`, { method: 'PUT', body: JSON.stringify({ role: newRole }) });
+    } catch (e) { console.warn('change role failed', e); }
+  };
+
+  const createUser = async (user, password) => {
+    try {
+      const res = await apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: user.email, password, name: user.name, role: user.role }) });
+      const data = await res.json();
+      setUsers(prev => [{ id: data.user.id, name: data.user.name, email: data.user.email, role: data.user.role }, ...prev]);
+    } catch (e) { console.warn('create user failed', e); }
   };
 
   return (
     <div className="p-6">
-      <h2 className="text-xl font-semibold mb-4">User Management</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold">User Management</h2>
+        <button onClick={() => setShowCreate(true)} className="px-3 py-2 bg-blue-600 text-white rounded">Create User</button>
+      </div>
       <div className="bg-white rounded-lg shadow overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
@@ -46,6 +72,8 @@ export default function UserAccess() {
           </tbody>
         </table>
       </div>
+
+      {showCreate && <UserFormModal onCancel={() => setShowCreate(false)} onSubmit={(user, password) => { createUser(user, password); setShowCreate(false); }} />}
     </div>
   );
 }

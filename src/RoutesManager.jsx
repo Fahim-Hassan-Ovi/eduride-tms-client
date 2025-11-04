@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { apiFetch } from './utils/api';
 import { Plus, Edit, Trash } from 'lucide-react';
+import RouteFormModal from './RouteFormModal.jsx';
 
 export default function RoutesManager({ routesProp = [], token = '', onChange }) {
   const [routes, setRoutes] = useState(routesProp.length ? routesProp : [
@@ -11,33 +12,22 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
   const [sortKey, setSortKey] = useState('name');
 
   const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return routes
-      .filter(r => r.name.toLowerCase().includes(q) || r.id.toLowerCase().includes(q))
-      .sort((a,b) => (a[sortKey] > b[sortKey] ? 1 : -1));
+    const q = (query || '').toLowerCase();
+    return (routes || [])
+      .filter(r => {
+        const name = (r && r.name) ? String(r.name).toLowerCase() : '';
+        const id = (r && r.id) ? String(r.id).toLowerCase() : '';
+        return name.includes(q) || id.includes(q);
+      })
+      .sort((a,b) => ((a && a[sortKey]) > (b && b[sortKey]) ? 1 : -1));
   }, [routes, query, sortKey]);
 
   const [editingPath, setEditingPath] = useState('');
 
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
   const addRoute = () => {
-    const newRoute = {
-      id: `R-${String(Math.floor(Math.random()*900)+100)}`,
-      name: `Route ${String.fromCharCode(65 + routes.length)}`,
-      start: 'New Start',
-      end: 'New End',
-      stops: 3,
-      departure: '09:00',
-      arrival: '09:45',
-      path: [],
-    };
-    (async () => {
-      try {
-        const res = await apiFetch('/api/routes', { method: 'POST', body: JSON.stringify(newRoute) });
-        const doc = await res.json();
-        setRoutes(prev => [doc, ...prev]);
-        onChange && onChange([doc, ...routes]);
-      } catch (e) { console.warn('create route failed', e); setRoutes(prev => [newRoute, ...prev]); onChange && onChange([newRoute, ...routes]); }
-    })();
+    setShowCreateModal(true);
   };
 
   const startEdit = (r) => {
@@ -110,7 +100,7 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
                     <button onClick={() => startEdit(r)} className="p-2 rounded-md bg-yellow-50 text-yellow-600"><Edit className="w-4 h-4" /></button>
                     <button onClick={async () => {
                         try {
-                          await fetch(`/api/routes/${r.id}`, { method: 'DELETE', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+                          await apiFetch(`/api/routes/${r.id}`, { method: 'DELETE' });
                           setRoutes(prev => prev.filter(pr => pr.id !== r.id));
                           onChange && onChange(routes.filter(pr => pr.id !== r.id));
                         } catch(e) { console.warn('delete route failed', e); setRoutes(prev => prev.filter(pr => pr.id !== r.id)); }
@@ -132,6 +122,25 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
             <button onClick={handleSaveCurrentPath} className="px-3 py-1 bg-blue-600 text-white rounded">Save Path</button>
           </div>
         </div>
+      )}
+
+      {showCreateModal && (
+        <RouteFormModal onCancel={() => setShowCreateModal(false)} onSubmit={async (route) => {
+          try {
+            const res = await apiFetch('/api/routes', { method: 'POST', body: JSON.stringify(route) });
+            if (!res.ok) {
+              const txt = await res.text();
+              console.error('route create error', res.status, txt);
+              setRoutes(prev => [route, ...prev]);
+              onChange && onChange([route, ...routes]);
+            } else {
+              const doc = await res.json();
+              setRoutes(prev => [doc, ...prev]);
+              onChange && onChange([doc, ...routes]);
+            }
+          } catch (e) { console.warn('route create failed', e); setRoutes(prev => [route, ...prev]); onChange && onChange([route, ...routes]); }
+          setShowCreateModal(false);
+        }} />
       )}
     </div>
   );
