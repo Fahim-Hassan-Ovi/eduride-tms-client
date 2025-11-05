@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { apiFetch } from './utils/api';
 import BusFormModal from './BusFormModal.jsx';
+import { MapPin } from 'lucide-react';
 
-export default function BusesManager({ busesProp = [], drivers = [], routes = [], vehicles = [], token = '', onChange }) {
+export default function BusesManager({ busesProp = [], drivers = [], routes = [], vehicles = [], token = '', onChange, onNavigateToBus }) {
     const [buses, setBuses] = useState(busesProp.length ? busesProp : [
         { id: 'Bus-101', plate: 'ABC-101', vehicleId: vehicles[0]?.id || '', capacity: 40, upDriver: null, downDriver: null, route: routes[0]?.name || 'Route A', departure: '07:30' },
     ]);
@@ -48,8 +49,8 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
         const payload = editedRows[busId];
         if (!payload) return;
         try {
-            // Remove MongoDB internal fields and clean null values to empty strings for string fields
-            const { _id, __v, createdAt, updatedAt, ...payloadWithoutMeta } = payload;
+            // Remove MongoDB internal fields, enriched fields (lat, lng, driver names), and clean null values to empty strings for string fields
+            const { _id, __v, createdAt, updatedAt, lat, lng, upDriverName, downDriverName, ...payloadWithoutMeta } = payload;
             const cleanPayload = Object.fromEntries(
                 Object.entries(payloadWithoutMeta).map(([k, v]) => [
                     k,
@@ -156,6 +157,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                 <th className={`${tableHeaderClass} w-48`}>Down Driver</th>
                                 <th className={tableHeaderClass}>Route</th>
                                 <th className={tableHeaderClass}>Departure</th>
+                                <th className={tableHeaderClass}>Actions</th>
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
@@ -232,6 +234,15 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                         <td className={tableDataClass}>
                                             {!editedRows[b.id] ? (
                                               <div className="flex items-center gap-2">
+                                                {b.lat && b.lng && onNavigateToBus && (
+                                                  <button 
+                                                    onClick={() => onNavigateToBus(b.lat, b.lng)} 
+                                                    className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                                                    title="View on map"
+                                                  >
+                                                    <MapPin className="w-4 h-4" />
+                                                  </button>
+                                                )}
                                                 <button onClick={() => startEdit(b.id)} className="px-2 py-1 bg-yellow-50 text-yellow-700 rounded">Edit</button>
                                                 <button onClick={async () => {
                                                     try {

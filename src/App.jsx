@@ -7,6 +7,7 @@ import BusesManager from './BusesManager.jsx';
 import RoutesManager from './RoutesManager.jsx';
 import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
+import StudentComplaints from './StudentComplaints.jsx';
 import LeafletMap from './LeafletMap.jsx';
 import GoogleMapDev from './GoogleMapDev.jsx';
 import VehicleManager from './VehicleManager.jsx';
@@ -20,6 +21,7 @@ function App() {
   const [selectedRole, setSelectedRole] = useState('student');
   const [errors, setErrors] = useState({ username: '', password: '' });
   const [viewMode, setViewMode] = useState('assigned');
+  const [nearbySearchRadius, setNearbySearchRadius] = useState(5); // km
 
   // location modal and user location
   const [showLocationModal, setShowLocationModal] = useState(false);
@@ -199,6 +201,66 @@ function App() {
     setErrors({ username: '', password: '' });
   };
 
+  // Calculate distance between two coordinates (Haversine formula)
+  const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const R = 6371; // Earth's radius in km
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = 
+      Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  // Get nearby buses for students
+  const getNearbyBuses = () => {
+    if (!userLocation || role !== 'student') return [];
+    return buses.filter(b => {
+      if (!b.lat || !b.lng) return false;
+      const distance = calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng);
+      return distance <= nearbySearchRadius;
+    }).sort((a, b) => {
+      const distA = calculateDistance(userLocation.lat, userLocation.lng, a.lat, a.lng);
+      const distB = calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng);
+      return distA - distB;
+    });
+  };
+
+  // Get active buses (buses with assigned drivers that have location)
+  const getActiveBuses = () => {
+    return buses.filter(b => {
+      // Bus must have an assigned driver and location
+      return (b.upDriver || b.downDriver) && b.lat && b.lng;
+    });
+  };
+
+  // Get active vehicles and buses combined
+  const getActiveVehicles = () => {
+    // Get vehicles with location (for backward compatibility)
+    const vehiclesWithLocation = (Array.isArray(vehicles) ? vehicles : Object.values(vehicles))
+      .filter(v => v.lat && v.lng);
+    
+    // Get active buses (with assigned drivers and location)
+    const activeBuses = getActiveBuses();
+    
+    // Combine and format buses as vehicles for display
+    const busesAsVehicles = activeBuses.map(bus => ({
+      id: bus.id,
+      name: bus.plate || bus.id,
+      lat: bus.lat,
+      lng: bus.lng,
+      type: 'bus', // Mark as bus for identification
+      route: bus.route,
+      upDriverName: bus.upDriverName,
+      downDriverName: bus.downDriverName
+    }));
+    
+    // Combine vehicles and buses
+    return [...vehiclesWithLocation, ...busesAsVehicles];
+  };
+
   const getFilteredVehicles = () => {
     if (role === 'admin' || viewMode === 'all') {
       return Array.isArray(vehicles) ? vehicles : Object.values(vehicles);
@@ -322,10 +384,39 @@ function App() {
     setWatchId(id);
   };
 
-  const stopDriverWatch = () => {
+  const stopDriverWatch = async () => {
     if (watchId != null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
+    }
+    
+    // Clear location from backend
+    const userId = currentUser?.id;
+    if (userId && role === 'driver') {
+      try {
+        // Clear location by setting it to null
+        const res = await apiFetch(`/api/users/${userId}/location`, {
+          method: 'PUT',
+          body: JSON.stringify({ lat: null, lng: null })
+        });
+        if (!res.ok) {
+          console.warn('Failed to clear location from backend');
+        } else {
+          setUserLocation(null);
+          // Also clear from assigned bus
+          const userEmail = currentUser?.email;
+          const assignedBus = buses.find(b => b.upDriver === userEmail || b.downDriver === userEmail);
+          if (assignedBus) {
+            setBuses(prev => prev.map(b =>
+              (b.id === assignedBus.id)
+                ? { ...b, lat: null, lng: null }
+                : b
+            ));
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to clear location from backend:', e);
+      }
     }
   };
 
@@ -463,11 +554,47 @@ function App() {
                   <Users className="w-5 h-5" />
                   <span className="font-medium text-sm">Find Nearby Vehicles</span>
                 </button>
+                {/* Driver location toggle */}
+                {role === 'driver' && (
+                  <div className="space-y-2">
+                    {watchId != null ? (
+                      <button 
+                        onClick={stopDriverWatch} 
+                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-red-600 text-white hover:bg-red-700"
+                      >
+                        <MapPin className="w-5 h-5" />
+                        <span className="font-medium text-sm">Stop Location Tracking</span>
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => {
+                          if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition(
+                              (pos) => startDriverWatch({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+                              (err) => alert('Unable to retrieve location: ' + err.message)
+                            );
+                          } else {
+                            alert('Geolocation is not supported by your browser');
+                          }
+                        }} 
+                        className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-green-600 text-white hover:bg-green-700"
+                      >
+                        <MapPin className="w-5 h-5" />
+                        <span className="font-medium text-sm">Start Location Tracking</span>
+                      </button>
+                    )}
+                  </div>
+                )}
                 {/* Complaint buttons */}
                 {role === 'student' && (
-                  <button onClick={() => setActivePage('submitComplaint')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
-                    <span className="font-medium text-sm">Submit Complaint</span>
-                  </button>
+                  <>
+                    <button onClick={() => setActivePage('submitComplaint')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Submit Complaint</span>
+                    </button>
+                    <button onClick={() => setActivePage('myComplaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">My Complaints</span>
+                    </button>
+                  </>
                 )}
 
                 {role === 'admin' && (
@@ -493,22 +620,56 @@ function App() {
 
               <div className="pt-4 border-t border-gray-200">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Active Vehicles</h3>
-                <div className="space-y-2">
-                  {getFilteredVehicles().map((vehicle) => (
+                <div className="space-y-2 max-h-64 overflow-y-auto">
+                  {getActiveVehicles().map((vehicle) => (
                     <div
                       key={vehicle.id}
-                      className="bg-gray-50 rounded-lg p-3 border border-gray-200"
+                      onClick={() => {
+                        if (vehicle.lat && vehicle.lng) {
+                          setActivePage('live');
+                          // Center map on this vehicle/bus (will be handled by LeafletMap)
+                          setTimeout(() => {
+                            const event = new CustomEvent('centerMap', { detail: { lat: vehicle.lat, lng: vehicle.lng } });
+                            window.dispatchEvent(event);
+                          }, 100);
+                        }
+                      }}
+                      className={`bg-gray-50 rounded-lg p-3 border border-gray-200 ${vehicle.lat && vehicle.lng ? 'cursor-pointer hover:bg-gray-100 transition' : ''}`}
                     >
                       <div className="flex items-center justify-between mb-1">
-                        <span className="font-medium text-sm text-gray-800">{vehicle.id}</span>
-                        <div className="flex items-center space-x-1 text-green-600">
-                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-                          <span className="text-xs font-medium">Live</span>
+                        <div className="flex items-center space-x-2">
+                          {vehicle.type === 'bus' && <Bus className="w-3 h-3 text-blue-600" />}
+                          <span className="font-medium text-sm text-gray-800">{vehicle.id}</span>
                         </div>
+                        {vehicle.lat && vehicle.lng && (
+                          <div className="flex items-center space-x-1 text-green-600">
+                            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                            <span className="text-xs font-medium">Live</span>
+                          </div>
+                        )}
                       </div>
                       <p className="text-xs text-gray-500">{vehicle.name || vehicle.id}</p>
+                      {vehicle.type === 'bus' && (
+                        <div className="mt-1 space-y-0.5">
+                          {vehicle.upDriverName && (
+                            <p className="text-xs text-blue-600">Up: {vehicle.upDriverName}</p>
+                          )}
+                          {vehicle.downDriverName && (
+                            <p className="text-xs text-blue-600">Down: {vehicle.downDriverName}</p>
+                          )}
+                          {vehicle.route && (
+                            <p className="text-xs text-gray-400">Route: {vehicle.route}</p>
+                          )}
+                        </div>
+                      )}
+                      {vehicle.lat && vehicle.lng && (
+                        <p className="text-xs text-blue-600 mt-1">Click to view on map</p>
+                      )}
                     </div>
                   ))}
+                  {getActiveVehicles().length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-2">No active vehicles</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -518,34 +679,96 @@ function App() {
             {activePage === 'live' && (
               <div className="bg-white/60 glass-card rounded-2xl shadow-2xl overflow-hidden">
                 <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-                  <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
-                    <MapPin className="w-5 h-5" />
-                    <span>Live Vehicle Tracking</span>
-                  </h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
+                      <MapPin className="w-5 h-5" />
+                      <span>Live Vehicle Tracking</span>
+                    </h2>
+                    {role === 'student' && userLocation && (
+                      <div className="flex items-center space-x-2">
+                        <label className="text-white text-sm">Search radius:</label>
+                        <select 
+                          value={nearbySearchRadius} 
+                          onChange={(e) => setNearbySearchRadius(Number(e.target.value))}
+                          className="px-2 py-1 rounded bg-white/20 text-white border border-white/30"
+                        >
+                          <option value={1} className="text-gray-800">1 km</option>
+                          <option value={3} className="text-gray-800">3 km</option>
+                          <option value={5} className="text-gray-800">5 km</option>
+                          <option value={10} className="text-gray-800">10 km</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="relative h-96">
                   {
                     import.meta.env.VITE_MAP_PROVIDER === 'google'
                       ? <GoogleMapDev vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
-                      : <LeafletMap vehicles={getFilteredVehicles()} buses={buses.filter(b => b.lat && b.lng)} drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
+                      : <LeafletMap 
+                          vehicles={role === 'student' ? [] : getFilteredVehicles()} 
+                          buses={
+                            role === 'student' && userLocation 
+                              ? getNearbyBuses() 
+                              : role === 'driver' 
+                                ? buses.filter(b => {
+                                    // Show driver's assigned bus if it has location
+                                    const userEmail = currentUser?.email;
+                                    return (b.upDriver === userEmail || b.downDriver === userEmail) && b.lat && b.lng;
+                                  })
+                                : buses.filter(b => b.lat && b.lng)
+                          } 
+                          drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} 
+                          routes={mockRoutes} 
+                          center={userLocation || { lat: 40.75, lng: -73.99 }} 
+                        />
                   }
                 </div>
 
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-blue-600">{getFilteredVehicles().length}</p>
-                      <p className="text-xs text-gray-600">Vehicles Tracked</p>
+                  {role === 'student' && userLocation ? (
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-700 mb-3">Nearby Buses ({getNearbyBuses().length})</h3>
+                      {getNearbyBuses().length === 0 ? (
+                        <p className="text-sm text-gray-500">No buses found within {nearbySearchRadius} km</p>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {getNearbyBuses().slice(0, 6).map(b => {
+                            const distance = calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng);
+                            return (
+                              <div key={b.id} className="bg-white p-3 rounded-lg border border-gray-200">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="font-medium text-sm">{b.plate || b.id}</p>
+                                    <p className="text-xs text-gray-500">{b.route || 'No route'}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-xs font-semibold text-blue-600">{distance.toFixed(1)} km</p>
+                                    <p className="text-xs text-gray-500">away</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-green-600">100%</p>
-                      <p className="text-xs text-gray-600">Online Status</p>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-blue-600">{getActiveVehicles().length}</p>
+                        <p className="text-xs text-gray-600">Active Vehicles</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-green-600">100%</p>
+                        <p className="text-xs text-gray-600">Online Status</p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-bold text-purple-600">Live</p>
+                        <p className="text-xs text-gray-600">Update Mode</p>
+                      </div>
                     </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-bold text-purple-600">Live</p>
-                      <p className="text-xs text-gray-600">Update Mode</p>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
@@ -554,17 +777,41 @@ function App() {
               <SubmitComplaint drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} studentName={username} onSubmit={addComplaint} onBack={() => setActivePage('live')} />
             )}
 
+            {activePage === 'myComplaints' && (
+              <StudentComplaints studentEmail={currentUser?.email || username} onBack={() => setActivePage('live')} token={token} />
+            )}
+
             {activePage === 'complaints' && (
               <ComplaintsAdmin complaints={complaints} onUpdate={updateComplaintFeedback} onBack={() => setActivePage('live')} token={token} />
             )}
             {activePage === 'buses' && (
-              <BusesManager busesProp={buses} drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} routes={routes} vehicles={vehicles} token={token} onChange={(updated) => setBuses(updated)} />
+              <BusesManager 
+                busesProp={buses} 
+                drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} 
+                routes={routes} 
+                vehicles={vehicles} 
+                token={token} 
+                onChange={(updated) => setBuses(updated)}
+                onNavigateToBus={(lat, lng) => {
+                  setActivePage('live');
+                  setTimeout(() => {
+                    const event = new CustomEvent('centerMap', { detail: { lat, lng } });
+                    window.dispatchEvent(event);
+                  }, 100);
+                }}
+              />
             )}
             {activePage === 'routes' && (
               <RoutesManager routesProp={routes} token={token} onChange={(updated) => setRoutes(updated)} />
             )}
             {activePage === 'vehicles' && (
-              <VehicleManager vehiclesProp={vehicles} token={token} onChange={(updated) => setVehicles(updated)} />
+              <VehicleManager 
+                vehiclesProp={vehicles} 
+                token={token} 
+                onChange={(updated) => setVehicles(updated)}
+                drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []}
+                routes={routes}
+              />
             )}
             {activePage === 'users' && (
               <UserAccess token={token} />

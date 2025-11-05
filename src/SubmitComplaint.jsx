@@ -1,11 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiFetch } from './utils/api';
 
-export default function SubmitComplaint({ drivers = [], studentName = '', onSubmit, onBack }) {
-  const [driverId, setDriverId] = useState(drivers[0]?.id || '');
+export default function SubmitComplaint({ drivers: driversProp = [], studentName = '', onSubmit, onBack }) {
+  const [drivers, setDrivers] = useState(driversProp);
+  const [driverId, setDriverId] = useState('');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Fetch drivers if not provided
+  useEffect(() => {
+    const fetchDrivers = async () => {
+      if (driversProp.length > 0) {
+        setDrivers(driversProp);
+        return;
+      }
+      try {
+        const res = await apiFetch('/api/users/drivers');
+        if (res.ok) {
+          const data = await res.json();
+          setDrivers(data.items || []);
+        } else {
+          console.warn('Failed to fetch drivers:', res.status);
+        }
+      } catch (e) {
+        console.warn('Error fetching drivers:', e);
+      }
+    };
+    fetchDrivers();
+  }, [driversProp]);
 
   const submit = async (e) => {
     e.preventDefault();

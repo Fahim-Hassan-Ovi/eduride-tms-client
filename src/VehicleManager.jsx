@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { apiFetch } from './utils/api';
 import VehicleFormModal from './VehicleFormModal.jsx';
 import VehicleViewModal from './VehicleViewModal.jsx';
-import { Eye } from 'lucide-react';
+import { Eye, Pencil } from 'lucide-react';
 
-export default function VehicleManager({ vehiclesProp = [], token = '', onChange }) {
+export default function VehicleManager({ vehiclesProp = [], token = '', onChange, drivers = [], routes = [] }) {
   // Initialize vehicles with the prop, but useEffect will overwrite it with fresh data
   const [vehicles, setVehicles] = useState(vehiclesProp.length ? vehiclesProp : []);
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState(null);
   const [viewingVehicle, setViewingVehicle] = useState(null);
   const [isLoading, setIsLoading] = useState(true); // New state for loading indicator
 
@@ -76,6 +77,32 @@ export default function VehicleManager({ vehiclesProp = [], token = '', onChange
     }
   };
 
+  const updateVehicle = async (vehicle) => {
+    try {
+      const { _id, __v, createdAt, updatedAt, ...vehicleData } = vehicle;
+      const res = await apiFetch(`/api/vehicles/${vehicle.id}`, { 
+        method: 'PUT', 
+        body: JSON.stringify(vehicleData) 
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('update vehicle failed:', res.status, text);
+        alert(`Failed to update vehicle: ${text}`);
+        return;
+      }
+      const doc = await res.json();
+      setVehicles(prev => {
+        const updated = prev.map(v => v.id === vehicle.id ? doc : v);
+        onChange && onChange(updated);
+        return updated;
+      });
+      setEditingVehicle(null);
+    } catch (e) {
+      console.warn('update vehicle failed', e);
+      alert('Failed to update vehicle. Check console for details.');
+    }
+  };
+
   const deleteVehicle = async (id) => {
     try {
       await apiFetch(`/api/vehicles/${id}`, { method: 'DELETE' });
@@ -129,6 +156,13 @@ export default function VehicleManager({ vehiclesProp = [], token = '', onChange
                       >
                         <Eye className="w-4 h-4" />
                       </button>
+                      <button 
+                        onClick={() => setEditingVehicle(v)} 
+                        className="p-2 rounded-md bg-yellow-50 text-yellow-600 hover:bg-yellow-100"
+                        title="Edit vehicle"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
                       <button onClick={() => deleteVehicle(v.id)} className="px-3 py-1 bg-red-50 text-red-600 rounded">Delete</button>
                     </div>
                   </td>
@@ -139,7 +173,8 @@ export default function VehicleManager({ vehiclesProp = [], token = '', onChange
         )}
       </div>
 
-      {showCreate && <VehicleFormModal onCancel={() => setShowCreate(false)} onSubmit={(v) => { createVehicle(v); setShowCreate(false); }} />}
+      {showCreate && <VehicleFormModal drivers={drivers} routes={routes} onCancel={() => setShowCreate(false)} onSubmit={(v) => { createVehicle(v); setShowCreate(false); }} />}
+      {editingVehicle && <VehicleFormModal vehicle={editingVehicle} drivers={drivers} routes={routes} onCancel={() => setEditingVehicle(null)} onSubmit={(v) => { updateVehicle(v); }} />}
       {viewingVehicle && <VehicleViewModal vehicle={viewingVehicle} onClose={() => setViewingVehicle(null)} />}
     </div>
   );

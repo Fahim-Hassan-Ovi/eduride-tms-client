@@ -54,8 +54,17 @@ export default function LeafletMap({ vehicles = [], buses = [], drivers = [], ro
       setLoaded(true);
     }).catch(err => console.error('Leaflet load err', err));
 
+    // Listen for centerMap events
+    const handleCenterMap = (e) => {
+      if (mapRef.current && e.detail) {
+        mapRef.current.setView([e.detail.lat, e.detail.lng], 15);
+      }
+    };
+    window.addEventListener('centerMap', handleCenterMap);
+
     return () => {
       mounted = false;
+      window.removeEventListener('centerMap', handleCenterMap);
       animIntervals.current.forEach(clearInterval);
       animIntervals.current = [];
       try {
