@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
 import { apiFetch } from './utils/api';
 import VehicleFormModal from './VehicleFormModal.jsx';
+import VehicleViewModal from './VehicleViewModal.jsx';
+import { Eye } from 'lucide-react';
 
 export default function VehicleManager({ vehiclesProp = [], token = '', onChange }) {
   // Initialize vehicles with the prop, but useEffect will overwrite it with fresh data
   const [vehicles, setVehicles] = useState(vehiclesProp.length ? vehiclesProp : []);
   const [query, setQuery] = useState('');
   const [showCreate, setShowCreate] = useState(false);
+  const [viewingVehicle, setViewingVehicle] = useState(null);
   const [isLoading, setIsLoading] = useState(true); // New state for loading indicator
 
   // --- Data Fetching Effect ---
@@ -107,8 +110,6 @@ export default function VehicleManager({ vehiclesProp = [], token = '', onChange
                 <th className="px-4 py-2 text-left">Name</th>
                 <th className="px-4 py-2 text-left">Number</th>
                 <th className="px-4 py-2 text-left">Reg</th>
-                <th className="px-4 py-2 text-left">Driver</th>
-                <th className="px-4 py-2 text-left">Route</th>
                 <th className="px-4 py-2 text-right">Action</th>
               </tr>
             </thead>
@@ -119,9 +120,18 @@ export default function VehicleManager({ vehiclesProp = [], token = '', onChange
                   <td className="px-4 py-2">{v.name}</td>
                   <td className="px-4 py-2">{v.number}</td>
                   <td className="px-4 py-2">{v.regNumber}</td>
-                  <td className="px-4 py-2">{v.driver}</td>
-                  <td className="px-4 py-2">{v.route}</td>
-                  <td className="px-4 py-2 text-right"><button onClick={() => deleteVehicle(v.id)} className="px-3 py-1 bg-red-50 text-red-600 rounded">Delete</button></td>
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex items-center justify-end space-x-2">
+                      <button 
+                        onClick={() => setViewingVehicle(v)} 
+                        className="p-2 rounded-md bg-blue-50 text-blue-600 hover:bg-blue-100"
+                        title="View details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => deleteVehicle(v.id)} className="px-3 py-1 bg-red-50 text-red-600 rounded">Delete</button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -130,6 +140,7 @@ export default function VehicleManager({ vehiclesProp = [], token = '', onChange
       </div>
 
       {showCreate && <VehicleFormModal onCancel={() => setShowCreate(false)} onSubmit={(v) => { createVehicle(v); setShowCreate(false); }} />}
+      {viewingVehicle && <VehicleViewModal vehicle={viewingVehicle} onClose={() => setViewingVehicle(null)} />}
     </div>
   );
 }

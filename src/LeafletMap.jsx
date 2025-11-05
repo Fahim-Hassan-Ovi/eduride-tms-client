@@ -35,7 +35,7 @@ function interpolate(a, b, t) {
   return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
 }
 
-export default function LeafletMap({ vehicles = [], routes = [], center = { lat: 40.75, lng: -73.99 } }) {
+export default function LeafletMap({ vehicles = [], buses = [], drivers = [], routes = [], center = { lat: 40.75, lng: -73.99 } }) {
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
@@ -68,19 +68,30 @@ export default function LeafletMap({ vehicles = [], routes = [], center = { lat:
     };
   }, []);
 
-  // update markers when vehicles change
+  // update markers when vehicles and buses change
   useEffect(() => {
     if (!loaded || !mapRef.current) return;
     const L = window.L;
 
+    // Remove old markers that are no longer in vehicles or buses
     const existingKeys = Object.keys(markersRef.current);
-    const vKeys = vehicles.map(v => v.id);
-    existingKeys.forEach(k => { if (!vKeys.includes(k)) { try { markersRef.current[k].remove(); } catch(e){} delete markersRef.current[k]; } });
+    const vKeys = vehicles.map(v => `v_${v.id}`);
+    const bKeys = buses.filter(b => b.lat && b.lng).map(b => `b_${b.id}`);
+    const allKeys = [...vKeys, ...bKeys];
+    existingKeys.forEach(k => { 
+      if (!allKeys.includes(k)) { 
+        try { markersRef.current[k].remove(); } catch(e){} 
+        delete markersRef.current[k]; 
+      } 
+    });
 
+    // Add/update vehicle markers
     vehicles.forEach(v => {
+      if (!v.lat || !v.lng) return;
       const pos = [v.lat, v.lng];
-      if (markersRef.current[v.id]) {
-        try { markersRef.current[v.id].setLatLng(pos); } catch(e){}
+      const key = `v_${v.id}`;
+      if (markersRef.current[key]) {
+        try { markersRef.current[key].setLatLng(pos); } catch(e){}
       } else {
         try {
           const label = v.name || v.id;
@@ -88,12 +99,46 @@ export default function LeafletMap({ vehicles = [], routes = [], center = { lat:
           const pic = v.picture ? `<div class="mt-2"><img src="${v.picture}" alt="${label}" style="width:120px;height:auto;border-radius:6px;"/></div>` : '';
           const html = `<div style="font-weight:700;color:white;background:#4f46e5;padding:6px 10px;border-radius:18px">${label}</div>`;
           const icon = L.divIcon({ className: 'leaflet-marker-custom', html });
-          const m = L.marker(pos, { icon }).addTo(mapRef.current).bindPopup(`<div><strong>${label}</strong><div>Number: ${v.number}</div>${reg}<div>Driver: ${v.driver}</div><div>Route: ${v.route}</div>${pic}</div>`);
-          markersRef.current[v.id] = m;
+          const m = L.marker(pos, { icon }).addTo(mapRef.current);
+          m.bindPopup(`<div><strong>Vehicle: ${label}</strong><div>Number: ${v.number || 'N/A'}</div>${reg}${pic}</div>`);
+          m.on('click', () => {
+            mapRef.current.setView(pos, Math.max(mapRef.current.getZoom(), 15));
+            m.openPopup();
+          });
+          markersRef.current[key] = m;
         } catch(err) { console.warn('marker add err', err); }
       }
     });
-  }, [loaded, vehicles]);
+
+    // Add/update bus markers (with click to view location)
+    buses.forEach(b => {
+      if (!b.lat || !b.lng) return;
+      const pos = [b.lat, b.lng];
+      const key = `b_${b.id}`;
+      if (markersRef.current[key]) {
+        try { markersRef.current[key].setLatLng(pos); } catch(e){}
+      } else {
+        try {
+          const label = b.plate || b.id;
+          // Use driver names from bus object (already enriched by API)
+          // Fallback to drivers array lookup if names not in bus object
+          const upDriverName = b.upDriverName || (drivers.find(d => d.email === b.upDriver)?.name) || null;
+          const downDriverName = b.downDriverName || (drivers.find(d => d.email === b.downDriver)?.name) || null;
+          const driverInfo = upDriverName ? `<div>Up Driver: ${upDriverName}</div>` : '';
+          const downDriverInfo = downDriverName ? `<div>Down Driver: ${downDriverName}</div>` : '';
+          const html = `<div style="font-weight:700;color:white;background:#10b981;padding:6px 10px;border-radius:18px">🚌 ${label}</div>`;
+          const icon = L.divIcon({ className: 'leaflet-marker-custom', html });
+          const m = L.marker(pos, { icon }).addTo(mapRef.current);
+          m.bindPopup(`<div><strong>Bus: ${b.id}</strong><div>Plate: ${b.plate || 'N/A'}</div><div>Route: ${b.route || 'N/A'}</div><div>Capacity: ${b.capacity || 'N/A'}</div>${driverInfo}${downDriverInfo}<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;"><strong>Location:</strong><br/>Lat: ${b.lat.toFixed(6)}<br/>Lng: ${b.lng.toFixed(6)}</div></div>`);
+          m.on('click', () => {
+            mapRef.current.setView(pos, Math.max(mapRef.current.getZoom(), 15));
+            m.openPopup();
+          });
+          markersRef.current[key] = m;
+        } catch(err) { console.warn('bus marker add err', err); }
+      }
+    });
+  }, [loaded, vehicles, buses]);
 
   // draw routes and animate a moving marker along each route
   useEffect(() => {

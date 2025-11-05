@@ -1,15 +1,30 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { apiFetch } from './utils/api';
-import { Plus, Edit, Trash } from 'lucide-react';
+import { Plus, Edit, Trash, X } from 'lucide-react';
 import RouteFormModal from './RouteFormModal.jsx';
 
 export default function RoutesManager({ routesProp = [], token = '', onChange }) {
-  const [routes, setRoutes] = useState(routesProp.length ? routesProp : [
-    { id: 'R-001', name: 'Route A', start: 'School', end: 'Downtown', stops: 6, departure: '07:30', arrival: '08:15' },
-    { id: 'R-002', name: 'Route B', start: 'North Gate', end: 'East Park', stops: 4, departure: '08:00', arrival: '08:40' },
-  ]);
+  const [routes, setRoutes] = useState(routesProp.length ? routesProp : []);
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState('name');
+  const [editingRoute, setEditingRoute] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+
+  useEffect(() => {
+    const fetchRoutes = async () => {
+      try {
+        const res = await apiFetch('/api/routes');
+        if (!res.ok) throw new Error(`Failed to fetch routes: ${res.status}`);
+        const data = await res.json();
+        setRoutes(data.items || data || []);
+        onChange && onChange(data.items || data || []);
+      } catch (e) {
+        console.error('Error fetching routes:', e);
+        setRoutes(routesProp);
+      }
+    };
+    fetchRoutes();
+  }, []);
 
   const filtered = useMemo(() => {
     const q = (query || '').toLowerCase();
@@ -22,36 +37,34 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
       .sort((a,b) => ((a && a[sortKey]) > (b && b[sortKey]) ? 1 : -1));
   }, [routes, query, sortKey]);
 
-  const [editingPath, setEditingPath] = useState('');
-
-  const [showCreateModal, setShowCreateModal] = useState(false);
-
   const addRoute = () => {
     setShowCreateModal(true);
   };
 
   const startEdit = (r) => {
-    setEditingPath(r.path ? r.path.map(p => p.join(',')).join('\n') : '');
+    setEditingRoute(r);
   };
 
-  const savePath = (id) => {
-    const lines = editingPath.split('\n').map(l => l.trim()).filter(Boolean);
-    const path = lines.map(l => { const [lat,lng] = l.split(',').map(Number); return [lat, lng]; });
-    (async () => {
-      try {
-        const res = await apiFetch(`/api/routes/${id}`, { method: 'PUT', body: JSON.stringify({ path }) });
-        const doc = await res.json();
-        setRoutes(prev => prev.map(r => r.id === id ? doc : r));
-        onChange && onChange(routes.map(r => r.id === id ? doc : r));
-      } catch (e) { console.warn('save path failed', e); setRoutes(prev => prev.map(r => r.id === id ? { ...r, path } : r)); onChange && onChange(routes); }
-      setEditingPath('');
-    })();
-  };
-
-  const handleSaveCurrentPath = () => {
-    const found = routes.find(r => r.path && r.path.map(p => p.join(',')).join('\n') === editingPath);
-    const id = found ? found.id : (routes[0] ? routes[0].id : undefined);
-    if (id) savePath(id);
+  const saveRoute = async (routeData) => {
+    try {
+      const res = await apiFetch(`/api/routes/${routeData.id}`, { method: 'PUT', body: JSON.stringify(routeData) });
+      if (!res.ok) {
+        const text = await res.text();
+        console.error('save route failed:', res.status, text);
+        alert(`Failed to update route: ${text}`);
+        return;
+      }
+      const doc = await res.json();
+      setRoutes(prev => {
+        const updated = prev.map(r => r.id === routeData.id ? doc : r);
+        onChange && onChange(updated);
+        return updated;
+      });
+      setEditingRoute(null);
+    } catch (e) { 
+      console.warn('save route failed', e);
+      alert('Failed to update route. Check console for details.');
+    }
   };
 
   return (
@@ -82,6 +95,8 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Stops</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Start</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Departure</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Arrival</th>
               <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
@@ -92,18 +107,38 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
               <tr key={r.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.id}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.name}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.stops}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.departure}</td>
-                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.arrival}</td>
+                <td className="px-6 py-4 text-sm text-gray-700">
+                  {Array.isArray(r.stops) && r.stops.length > 0 ? (
+                    <span className="text-xs">{r.stops.length} stops</span>
+                  ) : (
+                    <span className="text-gray-400">No stops</span>
+                  )}
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.start || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.end || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.departure || '-'}</td>
+                <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{r.arrival || '-'}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
                   <div className="inline-flex items-center space-x-2">
                     <button onClick={() => startEdit(r)} className="p-2 rounded-md bg-yellow-50 text-yellow-600"><Edit className="w-4 h-4" /></button>
                     <button onClick={async () => {
                         try {
-                          await apiFetch(`/api/routes/${r.id}`, { method: 'DELETE' });
-                          setRoutes(prev => prev.filter(pr => pr.id !== r.id));
-                          onChange && onChange(routes.filter(pr => pr.id !== r.id));
-                        } catch(e) { console.warn('delete route failed', e); setRoutes(prev => prev.filter(pr => pr.id !== r.id)); }
+                          const res = await apiFetch(`/api/routes/${r.id}`, { method: 'DELETE' });
+                          if (!res.ok) {
+                            const text = await res.text();
+                            console.error('delete route failed:', res.status, text);
+                            alert(`Failed to delete route: ${text}`);
+                            return;
+                          }
+                          setRoutes(prev => {
+                            const updated = prev.filter(pr => pr.id !== r.id);
+                            onChange && onChange(updated);
+                            return updated;
+                          });
+                        } catch(e) { 
+                          console.warn('delete route failed', e);
+                          alert('Failed to delete route. Check console for details.');
+                        }
                     }} className="p-2 rounded-md bg-red-50 text-red-600"><Trash className="w-4 h-4" /></button>
                   </div>
                 </td>
@@ -113,15 +148,12 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
         </table>
       </div>
 
-      {editingPath !== '' && (
-        <div className="mt-4 bg-white rounded shadow p-4">
-          <h3 className="font-semibold mb-2">Edit Route Path (lat,lng per line)</h3>
-          <textarea value={editingPath} onChange={(e) => setEditingPath(e.target.value)} rows={6} className="w-full border rounded p-2"></textarea>
-          <div className="mt-2 flex justify-end space-x-2">
-            <button onClick={() => setEditingPath('')} className="px-3 py-1 bg-gray-100 rounded">Cancel</button>
-            <button onClick={handleSaveCurrentPath} className="px-3 py-1 bg-blue-600 text-white rounded">Save Path</button>
-          </div>
-        </div>
+      {editingRoute && (
+        <RouteFormModal 
+          route={editingRoute}
+          onCancel={() => setEditingRoute(null)} 
+          onSubmit={saveRoute} 
+        />
       )}
 
       {showCreateModal && (
@@ -131,14 +163,19 @@ export default function RoutesManager({ routesProp = [], token = '', onChange })
             if (!res.ok) {
               const txt = await res.text();
               console.error('route create error', res.status, txt);
-              setRoutes(prev => [route, ...prev]);
-              onChange && onChange([route, ...routes]);
-            } else {
-              const doc = await res.json();
-              setRoutes(prev => [doc, ...prev]);
-              onChange && onChange([doc, ...routes]);
+              alert(`Failed to create route: ${txt}`);
+              return;
             }
-          } catch (e) { console.warn('route create failed', e); setRoutes(prev => [route, ...prev]); onChange && onChange([route, ...routes]); }
+            const doc = await res.json();
+            setRoutes(prev => {
+              const updated = [doc, ...prev];
+              onChange && onChange(updated);
+              return updated;
+            });
+          } catch (e) { 
+            console.warn('route create failed', e);
+            alert('Failed to create route. Check console for details.');
+          }
           setShowCreateModal(false);
         }} />
       )}

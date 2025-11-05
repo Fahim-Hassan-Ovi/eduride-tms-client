@@ -10,7 +10,27 @@ export default function Registration({ onCancel, onRegister }) {
   const [dob, setDob] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [phone, setPhone] = useState('');
+  const [picture, setPicture] = useState('');
+  const [preview, setPreview] = useState('');
   const [errors, setErrors] = useState({});
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) { // 2MB limit
+        alert('Image size must be less than 2MB');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result;
+        setPicture(base64);
+        setPreview(base64);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
 
   const validate = () => {
     const e = {};
@@ -31,7 +51,7 @@ export default function Registration({ onCancel, onRegister }) {
   const submit = (e) => {
     e.preventDefault();
     if (!validate()) return;
-    const user = { id: `U-${Date.now()}`, name, email, dob };
+    const user = { id: `U-${Date.now()}`, name, email, dob, phone, picture };
     onRegister && onRegister(user, password);
   };
 
@@ -63,6 +83,19 @@ export default function Registration({ onCancel, onRegister }) {
           <label className="block text-sm">Confirm Password</label>
           <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="w-full px-3 py-2 border rounded" />
           {errors.confirm && <p className="text-red-500 text-sm">{errors.confirm}</p>}
+        </div>
+        <div>
+          <label className="block text-sm">Phone (Optional)</label>
+          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="w-full px-3 py-2 border rounded" />
+        </div>
+        <div>
+          <label className="block text-sm">Profile Picture (Optional)</label>
+          <input type="file" accept="image/*" onChange={handleImageChange} className="w-full px-3 py-2 border rounded" />
+          {preview && (
+            <div className="mt-2">
+              <img src={preview} alt="Preview" className="w-32 h-32 object-cover rounded-lg border border-gray-300" />
+            </div>
+          )}
         </div>
 
         <div className="flex justify-between">

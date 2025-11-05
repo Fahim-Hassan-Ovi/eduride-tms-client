@@ -4,13 +4,13 @@ import LocationModal from './LocationModal.jsx';
 import Registration from './Registration.jsx';
 import Profile from './Profile.jsx';
 import BusesManager from './BusesManager.jsx';
-import DriversManager from './DriversManager.jsx';
 import RoutesManager from './RoutesManager.jsx';
 import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
 import LeafletMap from './LeafletMap.jsx';
 import GoogleMapDev from './GoogleMapDev.jsx';
 import VehicleManager from './VehicleManager.jsx';
+import UserAccess from './UserAccess.jsx';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -26,9 +26,9 @@ function App() {
   const [userLocation, setUserLocation] = useState(null);
   const [watchId, setWatchId] = useState(null);
 
-  // buses & drivers
+  // buses & users (drivers are users with role='driver')
   const [buses, setBuses] = useState([]);
-  const [drivers, setDrivers] = useState([]);
+  const [users, setUsers] = useState([]);
 
   // complaint system
   const [complaints, setComplaints] = useState([]);
@@ -80,26 +80,60 @@ function App() {
   useEffect(() => {
     const load = async () => {
       try {
-        const [vRes, rRes, dRes, bRes, cRes] = await Promise.all([
+        const [vRes, rRes, uRes, bRes, cRes] = await Promise.all([
           apiFetch('/api/vehicles'),
           apiFetch('/api/routes'),
-          apiFetch('/api/drivers'),
+          apiFetch('/api/users'),
           apiFetch('/api/buses'),
           apiFetch('/api/complaints'),
         ]);
-        const [vJson, rJson, dJson, bJson, cJson] = await Promise.all([vRes.json(), rRes.json(), dRes.json(), bRes.json(), cRes.json()]);
+        
+        // Parse JSON only if response is ok
+        const vJson = vRes.ok ? await vRes.json() : [];
+        const rJson = rRes.ok ? await rRes.json() : { items: [] };
+        const bJson = bRes.ok ? await bRes.json() : { items: [] };
+        const cJson = cRes.ok ? await cRes.json() : { items: [] };
+        
+        // Handle users endpoint - may return 403 for non-admin users
+        let uJson = { items: [] };
+        if (uRes.ok) {
+          uJson = await uRes.json();
+        } else {
+          // For non-admin users, set empty array (they don't need to see all users)
+          console.warn('Users endpoint returned:', uRes.status, 'Setting users to empty array');
+        }
+        
         // vehicles API returns { items, page } or plain array depending on auth; normalize
         const vItems = Array.isArray(vJson) ? vJson : (vJson.items || []);
         setVehicles(vItems);
-        setRoutes(rJson.items || rJson);
-        setDrivers(dJson.items || dJson);
-        setBuses(bJson.items || bJson);
-        setComplaints(cJson.items || cJson);
+        setRoutes(Array.isArray(rJson) ? rJson : (rJson.items || []));
+        
+        // Ensure users is always an array
+        const usersData = Array.isArray(uJson) ? uJson : (uJson.items || []);
+        setUsers(Array.isArray(usersData) ? usersData : []);
+        
+        setBuses(Array.isArray(bJson) ? bJson : (bJson.items || []));
+        setComplaints(Array.isArray(cJson) ? cJson : (cJson.items || []));
       } catch (err) {
         console.warn('Error loading API data', err);
+        // Ensure users is always an array even on error
+        setUsers([]);
       }
     };
     load();
+    
+    // Refresh bus locations every 5 seconds to get updated driver locations
+    const interval = setInterval(async () => {
+      try {
+        const bRes = await apiFetch('/api/buses');
+        const bJson = await bRes.json();
+        setBuses(bJson.items || bJson);
+      } catch (err) {
+        console.warn('Error refreshing bus locations', err);
+      }
+    }, 5000);
+    
+    return () => clearInterval(interval);
   }, [token]);
 
 
@@ -173,29 +207,34 @@ function App() {
   };
 
   const addComplaint = (complaint) => {
-    // persist to API
-    (async () => {
-      try {
-        const res = await apiFetch('/api/complaints', { method: 'POST', body: JSON.stringify(complaint) });
-        const doc = await res.json();
-        setComplaints(prev => [doc, ...prev]);
-      } catch (e) { console.warn('submit complaint failed', e); setComplaints(prev => [complaint, ...prev]); }
-    })();
+    // Complaint is already persisted by SubmitComplaint component
+    // Just update local state
+    setComplaints(prev => {
+      const exists = prev.find(c => c.id === complaint.id);
+      if (exists) return prev;
+      return [complaint, ...prev];
+    });
   };
 
   const updateComplaintFeedback = (id, update) => {
-    (async () => {
-      try {
-        const res = await apiFetch(`/api/complaints/${id}`, { method: 'PUT', body: JSON.stringify(update) });
-        const doc = await res.json();
-        setComplaints(prev => prev.map(c => c.id === id ? doc : c));
-      } catch (e) { console.warn('update complaint failed', e); setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...update } : c)); }
-    })();
+    // Update is already persisted by ComplaintsAdmin component
+    // Just update local state
+    setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...update } : c));
   };
 
   const handleRegister = async (user, password) => {
     try {
-      const res = await apiFetch('/api/auth/register', { method: 'POST', body: JSON.stringify({ email: user.email, password, name: user.name, role: user.role }) });
+      const res = await apiFetch('/api/auth/register', { 
+        method: 'POST', 
+        body: JSON.stringify({ 
+          email: user.email, 
+          password, 
+          name: user.name, 
+          role: user.role || 'student',
+          phone: user.phone || '',
+          picture: user.picture || ''
+        }) 
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Register failed');
       setToken(data.token);
@@ -209,38 +248,76 @@ function App() {
     }
   };
 
-  const handleRegisterDriver = (driver) => {
-    (async () => {
-      try {
-        const res = await apiFetch('/api/drivers', { method: 'POST', body: JSON.stringify(driver) });
-        const doc = await res.json();
-        setDrivers(prev => [doc, ...prev]);
-      } catch (e) { console.warn('register driver failed', e); setDrivers(prev => [driver, ...prev]); }
-    })();
-  };
 
   const handleSaveProfile = (updated) => {
     setUserProfiles(prev => prev.map(p => p.id === updated.id ? updated : p));
     // optionally persist to API - left as mock for now
   };
 
-  // Driver location watch: when a driver allows location, start watch and update their vehicle if matched
-  const startDriverWatch = (coords) => {
+  // Driver location watch: when a driver allows location, start watch and update their assigned bus
+  const startDriverWatch = async (coords) => {
     setUserLocation(coords);
     if (role !== 'driver') return;
-    // try to find a vehicle matching username
-    const driverName = username;
-    const vehicleKey = Object.keys(vehicles).find(k => (vehicles[k].driver || '').toLowerCase() === driverName.toLowerCase());
-    const vehicleId = vehicleKey || Object.keys(vehicles)[0];
-    if (!vehicleId) return;
-    // update that vehicle once
-    setVehicles(prev => ({ ...prev, [vehicleId]: { ...prev[vehicleId], lat: coords.lat, lng: coords.lng } }));
+    
+    // Update user location in backend (using current user's ID)
+    const userId = currentUser?.id;
+    if (!userId) {
+      console.warn('User ID not found');
+      return;
+    }
+    
+    try {
+      const res = await apiFetch(`/api/users/${userId}/location`, {
+        method: 'PUT',
+        body: JSON.stringify({ lat: coords.lat, lng: coords.lng })
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        console.warn('Failed to update user location:', res.status, text);
+      }
+    } catch (e) {
+      console.warn('Failed to update user location in backend:', e);
+    }
+    
+    // Find bus assigned to this driver (using email)
+    const userEmail = currentUser?.email;
+    const assignedBus = buses.find(b => b.upDriver === userEmail || b.downDriver === userEmail);
+    if (assignedBus) {
+      // Update bus location in local state (will be refreshed from API)
+      setBuses(prev => prev.map(b => 
+        (b.id === assignedBus.id) 
+          ? { ...b, lat: coords.lat, lng: coords.lng }
+          : b
+      ));
+    }
 
     if (!navigator.geolocation) return;
-    const id = navigator.geolocation.watchPosition((pos) => {
+    const id = navigator.geolocation.watchPosition(async (pos) => {
       const newCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       setUserLocation(newCoords);
-      setVehicles(prev => ({ ...prev, [vehicleId]: { ...prev[vehicleId], lat: newCoords.lat, lng: newCoords.lng } }));
+      
+      // Update backend
+      try {
+        const res = await apiFetch(`/api/users/${userId}/location`, {
+          method: 'PUT',
+          body: JSON.stringify({ lat: newCoords.lat, lng: newCoords.lng })
+        });
+        if (!res.ok) {
+          const text = await res.text();
+          console.warn('Failed to update user location:', res.status, text);
+        }
+      } catch (e) {
+        console.warn('Failed to update user location in backend:', e);
+      }
+      
+      // Update bus location in local state
+      if (assignedBus) {
+        setBuses(prev => prev.map(b => 
+          (b.id === assignedBus.id) 
+            ? { ...b, lat: newCoords.lat, lng: newCoords.lng }
+            : b
+        ));
+      }
     }, (err) => console.warn('watch error', err), { enableHighAccuracy: true, maximumAge: 2000 });
     setWatchId(id);
   };
@@ -401,9 +478,6 @@ function App() {
                     <button onClick={() => setActivePage('buses')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Buses</span>
                     </button>
-                    <button onClick={() => setActivePage('drivers')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
-                      <span className="font-medium text-sm">Manage Drivers</span>
-                    </button>
                     <button onClick={() => setActivePage('routes')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Routes</span>
                     </button>
@@ -432,8 +506,7 @@ function App() {
                           <span className="text-xs font-medium">Live</span>
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">{vehicle.route}</p>
-                      <p className="text-xs text-gray-400 mt-1">Driver: {vehicle.driver}</p>
+                      <p className="text-xs text-gray-500">{vehicle.name || vehicle.id}</p>
                     </div>
                   ))}
                 </div>
@@ -454,7 +527,7 @@ function App() {
                   {
                     import.meta.env.VITE_MAP_PROVIDER === 'google'
                       ? <GoogleMapDev vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
-                      : <LeafletMap vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
+                      : <LeafletMap vehicles={getFilteredVehicles()} buses={buses.filter(b => b.lat && b.lng)} drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
                   }
                 </div>
 
@@ -478,17 +551,14 @@ function App() {
             )}
 
             {activePage === 'submitComplaint' && (
-              <SubmitComplaint vehicles={getFilteredVehicles()} studentName={username} onSubmit={addComplaint} onBack={() => setActivePage('live')} />
+              <SubmitComplaint drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} studentName={username} onSubmit={addComplaint} onBack={() => setActivePage('live')} />
             )}
 
             {activePage === 'complaints' && (
-              <ComplaintsAdmin complaints={complaints} onUpdate={updateComplaintFeedback} onBack={() => setActivePage('live')} />
+              <ComplaintsAdmin complaints={complaints} onUpdate={updateComplaintFeedback} onBack={() => setActivePage('live')} token={token} />
             )}
             {activePage === 'buses' && (
-              <BusesManager busesProp={buses} drivers={drivers} routes={routes} vehicles={vehicles} token={token} onChange={(updated) => setBuses(updated)} />
-            )}
-            {activePage === 'drivers' && (
-              <DriversManager driversProp={drivers} token={token} onChange={(updated) => setDrivers(updated)} onRegisterDriver={handleRegisterDriver} />
+              <BusesManager busesProp={buses} drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} routes={routes} vehicles={vehicles} token={token} onChange={(updated) => setBuses(updated)} />
             )}
             {activePage === 'routes' && (
               <RoutesManager routesProp={routes} token={token} onChange={(updated) => setRoutes(updated)} />

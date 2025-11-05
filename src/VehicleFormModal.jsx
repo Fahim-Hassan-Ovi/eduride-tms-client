@@ -19,7 +19,17 @@ export default function VehicleFormModal({ onCancel, onSubmit }) {
   const submit = (e) => {
     e.preventDefault();
     if (!id.trim() || !name.trim()) return alert('ID and name are required');
-    const vehicle = { id, name, number, regNumber, picture: pictureData, lat: 0, lng: 0, driver, route };
+    const vehicle = { 
+      id: id.trim(), 
+      name: name.trim(), 
+      number: number || '', 
+      regNumber: regNumber || '', 
+      picture: pictureData || '', 
+      lat: 0, 
+      lng: 0, 
+      driver: driver || '', 
+      route: route || '' 
+    };
     onSubmit && onSubmit(vehicle);
   };
 

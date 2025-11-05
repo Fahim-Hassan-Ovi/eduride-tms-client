@@ -89,12 +89,12 @@ export default function GoogleMapDev({ vehicles = [], routes = [], center = { la
             el.innerHTML = `<div style="background:#4f46e5;color:white;padding:6px 10px;border-radius:20px;font-weight:700">${v.id}</div>`;
             const adv = new maps.marker.AdvancedMarkerElement({ position: pos, map: mapRef.current, content: el });
             adv.addListener && adv.addListener('click', () => {
-              try { new maps.InfoWindow({ content: `<div><strong>${v.id}</strong><div>Driver: ${v.driver}</div></div>` }).open({ anchor: adv, map: mapRef.current }); } catch(e){}
+              try { new maps.InfoWindow({ content: `<div><strong>${v.name || v.id}</strong><div>Number: ${v.number || 'N/A'}</div></div>` }).open({ anchor: adv, map: mapRef.current }); } catch(e){}
             });
             markersRef.current[v.id] = adv;
           } else {
             const marker = new maps.Marker({ position: pos, map: mapRef.current, title: v.id });
-            const info = new maps.InfoWindow({ content: `<div><strong>${v.id}</strong><div>Driver: ${v.driver}</div></div>` });
+            const info = new maps.InfoWindow({ content: `<div><strong>${v.name || v.id}</strong><div>Number: ${v.number || 'N/A'}</div></div>` });
             marker.addListener('click', () => info.open({ anchor: marker, map: mapRef.current }));
             markersRef.current[v.id] = marker;
           }

@@ -48,7 +48,21 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
         const payload = editedRows[busId];
         if (!payload) return;
         try {
-            const res = await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify(payload) });
+            // Remove MongoDB internal fields and clean null values to empty strings for string fields
+            const { _id, __v, createdAt, updatedAt, ...payloadWithoutMeta } = payload;
+            const cleanPayload = Object.fromEntries(
+                Object.entries(payloadWithoutMeta).map(([k, v]) => [
+                    k,
+                    (['upDriver', 'downDriver', 'plate', 'vehicleId', 'route', 'departure'].includes(k) && v === null) ? '' : v
+                ])
+            );
+            const res = await apiFetch(`/api/buses/${busId}`, { method: 'PUT', body: JSON.stringify(cleanPayload) });
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('save row failed:', res.status, text);
+                alert(`Failed to update bus: ${text}`);
+                return;
+            }
             const doc = await res.json();
             const updated = buses.map(b => b.id === busId ? doc : b);
             setBuses(updated);
@@ -56,6 +70,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
             cancelEdit(busId);
         } catch (e) {
             console.warn('save row failed', e);
+            alert('Failed to update bus. Check console for details.');
         }
     };
 
@@ -104,13 +119,25 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                     </div>
                 </div>
                 {showCreateModal && (
-                  <BusFormModal vehicles={vehiclesList} routes={routes} onCancel={() => setShowCreateModal(false)} onSubmit={async (bus) => {
+                  <BusFormModal existingBusIds={buses.map(x => x.id)} vehicles={vehiclesList} routes={routes} onCancel={() => setShowCreateModal(false)} onSubmit={async (bus) => {
                     try {
                       const res = await apiFetch('/api/buses', { method: 'POST', body: JSON.stringify(bus) });
+                      if (!res.ok) {
+                        const text = await res.text();
+                        console.error('create bus failed:', res.status, text);
+                        alert(`Failed to create bus: ${text}`);
+                        return;
+                      }
                       const doc = await res.json();
-                      setBuses(prev => [doc, ...prev]);
-                      onChange && onChange([doc, ...buses]);
-                    } catch (e) { console.warn('create bus failed', e); setBuses(prev => [bus, ...prev]); onChange && onChange([bus, ...buses]); }
+                      setBuses(prev => {
+                        const updated = [doc, ...prev];
+                        onChange && onChange(updated);
+                        return updated;
+                      });
+                    } catch (e) {
+                      console.warn('create bus failed', e);
+                      alert('Failed to create bus. Check console for details.');
+                    }
                     setShowCreateModal(false);
                   }} />
                 )}
@@ -164,7 +191,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                                 className={tableSelectClass}
                                             >
                                                 <option value="">-- assign --</option>
-                                                {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                                {drivers.map(d => <option key={d._id || d.id} value={d.email}>{d.name} ({d.email})</option>)}
                                             </select>
                                         </td>
                                         
@@ -176,7 +203,7 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                                 className={tableSelectClass}
                                             >
                                                 <option value="">-- assign --</option>
-                                                {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                                {drivers.map(d => <option key={d._id || d.id} value={d.email}>{d.name} ({d.email})</option>)}
                                             </select>
                                         </td>
                                         
