@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MapPin, User, Bus, LogOut, Users, Navigation } from 'lucide-react';
 import LocationModal from './LocationModal.jsx';
 import Registration from './Registration.jsx';
@@ -8,10 +8,16 @@ import RoutesManager from './RoutesManager.jsx';
 import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
 import StudentComplaints from './StudentComplaints.jsx';
+import PaySemester from './PaySemester.jsx';
+import PaymentSuccess from './PaymentSuccess.jsx';
 import LeafletMap from './LeafletMap.jsx';
 import GoogleMapDev from './GoogleMapDev.jsx';
 import VehicleManager from './VehicleManager.jsx';
 import UserAccess from './UserAccess.jsx';
+import StudentPayments from './StudentPayments.jsx';
+import PaymentsAdmin from './PaymentsAdmin.jsx';
+import BusRequestsBoard from './BusRequestsBoard.jsx';
+import BusRequestsAdmin from './BusRequestsAdmin.jsx';
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -35,6 +41,14 @@ function App() {
   // complaint system
   const [complaints, setComplaints] = useState([]);
   const [activePage, setActivePage] = useState('live'); // 'live' | 'submitComplaint' | 'complaints'
+  const [paymentIdForSuccess, setPaymentIdForSuccess] = useState(null);
+  const [myPayments, setMyPayments] = useState([]);
+  const [allPayments, setAllPayments] = useState([]);
+  const [paymentsVersion, setPaymentsVersion] = useState(0);
+  const [myBusRequests, setMyBusRequests] = useState([]);
+  const [busRequests, setBusRequests] = useState([]);
+  const [busRequestVersion, setBusRequestVersion] = useState(0);
+  const [busRequestSubmitting, setBusRequestSubmitting] = useState(false);
   const [authView, setAuthView] = useState('login'); // 'login' | 'register'
   const [userProfiles, setUserProfiles] = useState([]);
 
@@ -78,8 +92,114 @@ function App() {
     return res;
   };
 
+  // If Stripe redirected back with a session_id, attempt to find the payment and show success view
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get('session_id');
+    if (!session) return;
+    (async () => {
+      try {
+        const r = await apiFetch(`/api/payments/session/${session}`);
+        if (!r.ok) {
+          console.warn('No payment found for session', session);
+          return;
+        }
+        const p = await r.json();
+        if (p && p._id) {
+          setPaymentIdForSuccess(p._id);
+          setActivePage('paymentSuccess');
+          setPaymentsVersion(v => v + 1);
+        }
+      } catch (e) {
+        console.warn('Failed to lookup payment for session', e);
+      }
+    })();
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) {
+      setMyPayments([]);
+      setAllPayments([]);
+      return;
+    }
+
+    const loadPayments = async () => {
+      try {
+        const mineRes = await apiFetch('/api/payments/mine');
+        if (mineRes.ok) {
+          const mineJson = await mineRes.json();
+          const mineItems = Array.isArray(mineJson.items) ? mineJson.items : [];
+          setMyPayments(mineItems);
+        } else if (mineRes.status === 404) {
+          setMyPayments([]);
+        }
+
+        if (['admin', 'staff'].includes(role)) {
+          const allRes = await apiFetch('/api/payments');
+          if (allRes.ok) {
+            const allJson = await allRes.json();
+            const allItems = Array.isArray(allJson.items) ? allJson.items : [];
+            setAllPayments(allItems);
+          } else {
+            setAllPayments([]);
+          }
+        } else {
+          setAllPayments([]);
+        }
+      } catch (err) {
+        console.warn('Failed to load payments', err);
+      }
+    };
+
+    loadPayments();
+  }, [token, role, paymentsVersion]);
+
+  useEffect(() => {
+    if (!token) {
+      setMyBusRequests([]);
+      setBusRequests([]);
+      return;
+    }
+
+    const loadBusRequests = async () => {
+      try {
+        const mineRes = await apiFetch('/api/bus-requests/mine');
+        if (mineRes.ok) {
+          const mineJson = await mineRes.json();
+          setMyBusRequests(Array.isArray(mineJson.items) ? mineJson.items : []);
+        } else {
+          setMyBusRequests([]);
+        }
+
+        if (['admin', 'staff'].includes(role)) {
+          const allRes = await apiFetch('/api/bus-requests');
+          if (allRes.ok) {
+            const allJson = await allRes.json();
+            setBusRequests(Array.isArray(allJson.items) ? allJson.items : []);
+          } else {
+            setBusRequests([]);
+          }
+        } else {
+          setBusRequests([]);
+        }
+      } catch (err) {
+        console.warn('Failed to load bus requests', err);
+      }
+    };
+
+    loadBusRequests();
+  }, [token, role, busRequestVersion]);
+
   // load data from API on mount
   useEffect(() => {
+    if (!token) {
+      setVehicles({});
+      setRoutes([]);
+      setUsers([]);
+      setBuses([]);
+      setComplaints([]);
+      return;
+    }
     const load = async () => {
       try {
         const [vRes, rRes, uRes, bRes, cRes] = await Promise.all([
@@ -212,6 +332,36 @@ function App() {
       Math.sin(dLng/2) * Math.sin(dLng/2);
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
+  };
+
+  const createBusRequest = async (payload) => {
+    if (!payload?.routeId) {
+      return { ok: false, error: 'Route is required' };
+    }
+    setBusRequestSubmitting(true);
+    try {
+      const res = await apiFetch('/api/bus-requests', { method: 'POST', body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Failed to submit request' };
+      setBusRequestVersion(v => v + 1);
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    } finally {
+      setBusRequestSubmitting(false);
+    }
+  };
+
+  const updateBusRequest = async (id, payload) => {
+    try {
+      const res = await apiFetch(`/api/bus-requests/${id}`, { method: 'PUT', body: JSON.stringify(payload) });
+      const data = await res.json();
+      if (!res.ok) return { ok: false, error: data.error || 'Failed to update request' };
+      setBusRequestVersion(v => v + 1);
+      return { ok: true, data };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
   };
 
   // Get nearby buses for students
@@ -588,8 +738,14 @@ function App() {
                 {/* Complaint buttons */}
                 {role === 'student' && (
                   <>
+                    <button onClick={() => setActivePage('busRequests')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Bus Requests</span>
+                    </button>
                     <button onClick={() => setActivePage('submitComplaint')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Submit Complaint</span>
+                    </button>
+                    <button onClick={() => setActivePage('payments')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Payments &amp; Card</span>
                     </button>
                     <button onClick={() => setActivePage('myComplaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">My Complaints</span>
@@ -613,6 +769,26 @@ function App() {
                     </button>
                     <button onClick={() => setActivePage('users')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
                       <span className="font-medium text-sm">Manage Users</span>
+                    </button>
+                    <button onClick={() => setActivePage('busRequestsAdmin')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Bus Requests</span>
+                    </button>
+                    <button onClick={() => setActivePage('paymentsAdmin')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Payments Overview</span>
+                    </button>
+                  </div>
+                )}
+
+                {role === 'staff' && (
+                  <div className="space-y-2">
+                    <button onClick={() => setActivePage('busRequests')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Bus Requests</span>
+                    </button>
+                    <button onClick={() => setActivePage('complaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Complaints</span>
+                    </button>
+                    <button onClick={() => setActivePage('paymentsAdmin')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                      <span className="font-medium text-sm">Payments Overview</span>
                     </button>
                   </div>
                 )}
@@ -777,6 +953,16 @@ function App() {
               <SubmitComplaint drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} studentName={username} onSubmit={addComplaint} onBack={() => setActivePage('live')} />
             )}
 
+            {activePage === 'busRequests' && (
+              <BusRequestsBoard
+                routes={routes}
+                buses={buses}
+                requests={myBusRequests}
+                submitting={busRequestSubmitting}
+                onCreateRequest={createBusRequest}
+              />
+            )}
+
             {activePage === 'myComplaints' && (
               <StudentComplaints studentEmail={currentUser?.email || username} onBack={() => setActivePage('live')} token={token} />
             )}
@@ -815,6 +1001,38 @@ function App() {
             )}
             {activePage === 'users' && (
               <UserAccess token={token} />
+            )}
+            {activePage === 'payments' && (
+              <StudentPayments
+                studentId={currentUser?.id || currentUser?._id}
+                payments={myPayments}
+                apiBase={API_BASE}
+                onStartPayment={(pid) => {
+                  setPaymentIdForSuccess(pid);
+                  setActivePage('paymentSuccess');
+                }}
+              />
+            )}
+            {activePage === 'paymentsAdmin' && (
+              <PaymentsAdmin payments={allPayments} apiBase={API_BASE} />
+            )}
+            {activePage === 'busRequestsAdmin' && (
+              <BusRequestsAdmin
+                requests={busRequests}
+                buses={buses}
+                users={Array.isArray(users) ? users : []}
+                onUpdateRequest={updateBusRequest}
+              />
+            )}
+            {activePage === 'paymentSuccess' && paymentIdForSuccess && (
+              <PaymentSuccess
+                paymentId={paymentIdForSuccess}
+                onDone={() => {
+                  setPaymentsVersion(v => v + 1);
+                  setPaymentIdForSuccess(null);
+                  setActivePage('live');
+                }}
+              />
             )}
           </div>
         </div>
