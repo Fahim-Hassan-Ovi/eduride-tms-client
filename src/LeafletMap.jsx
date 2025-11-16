@@ -35,12 +35,13 @@ function interpolate(a, b, t) {
   return { lat: a.lat + (b.lat - a.lat) * t, lng: a.lng + (b.lng - a.lng) * t };
 }
 
-export default function LeafletMap({ vehicles = [], buses = [], drivers = [], routes = [], center = { lat: 40.75, lng: -73.99 } }) {
+export default function LeafletMap({ vehicles = [], buses = [], drivers = [], routes = [], center = { lat: 40.75, lng: -73.99 }, userLocation = null, role = 'student' }) {
   const mapElRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef({});
   const polysRef = useRef({});
   const animIntervals = useRef([]);
+  const routeLayerRef = useRef(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -106,13 +107,23 @@ export default function LeafletMap({ vehicles = [], buses = [], drivers = [], ro
           const label = v.name || v.id;
           const reg = v.regNumber ? `<div>Reg: ${v.regNumber}</div>` : '';
           const pic = v.picture ? `<div class="mt-2"><img src="${v.picture}" alt="${label}" style="width:120px;height:auto;border-radius:6px;"/></div>` : '';
-          const html = `<div style="font-weight:700;color:white;background:#4f46e5;padding:6px 10px;border-radius:18px">${label}</div>`;
-          const icon = L.divIcon({ className: 'leaflet-marker-custom', html });
+          // vehicle icon (small badge)
+          const vsvg = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="11" fill="#3b82f6"/><path d="M7 13h10" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9h10" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+          const vhtml = `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:18px;background:transparent"><div style="width:30px;height:30px">${vsvg}</div><div style="font-weight:700;color:#1E40AF">${label}</div></div>`;
+          const icon = L.divIcon({ className: 'leaflet-marker-custom', html: vhtml, iconSize: [120, 40] });
           const m = L.marker(pos, { icon }).addTo(mapRef.current);
           m.bindPopup(`<div><strong>Vehicle: ${label}</strong><div>Number: ${v.number || 'N/A'}</div>${reg}${pic}</div>`);
           m.on('click', () => {
             mapRef.current.setView(pos, Math.max(mapRef.current.getZoom(), 15));
             m.openPopup();
+            try {
+              if (userLocation && (role === 'student' || role === 'staff')) {
+                if (routeLayerRef.current) { try { routeLayerRef.current.remove(); } catch(e){} routeLayerRef.current = null; }
+                const latlngs = [[userLocation.lat, userLocation.lng], [v.lat, v.lng]];
+                routeLayerRef.current = L.polyline(latlngs, { color: '#2563EB', weight: 4, opacity: 0.9 }).addTo(mapRef.current);
+                mapRef.current.fitBounds(routeLayerRef.current.getBounds().pad(0.5));
+              }
+            } catch (e) { console.warn('draw route err', e); }
           });
           markersRef.current[key] = m;
         } catch(err) { console.warn('marker add err', err); }
@@ -135,13 +146,23 @@ export default function LeafletMap({ vehicles = [], buses = [], drivers = [], ro
           const downDriverName = b.downDriverName || (drivers.find(d => d.email === b.downDriver)?.name) || null;
           const driverInfo = upDriverName ? `<div>Up Driver: ${upDriverName}</div>` : '';
           const downDriverInfo = downDriverName ? `<div>Down Driver: ${downDriverName}</div>` : '';
-          const html = `<div style="font-weight:700;color:white;background:#10b981;padding:6px 10px;border-radius:18px">🚌 ${label}</div>`;
-          const icon = L.divIcon({ className: 'leaflet-marker-custom', html });
+          // improved bus icon (SVG badge)
+          const svg = `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="11" fill="#0ea5a0"/><path d="M6 10v4h12v-4" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 7h10v3H7V7z" stroke="#fff" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+          const html = `<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:18px;background:transparent"><div style="width:36px;height:36px">${svg}</div><div style="font-weight:700;color:#064E3B">${label}</div></div>`;
+          const icon = L.divIcon({ className: 'leaflet-marker-custom', html, iconSize: [140, 44] });
           const m = L.marker(pos, { icon }).addTo(mapRef.current);
           m.bindPopup(`<div><strong>Bus: ${b.id}</strong><div>Plate: ${b.plate || 'N/A'}</div><div>Route: ${b.route || 'N/A'}</div><div>Capacity: ${b.capacity || 'N/A'}</div>${driverInfo}${downDriverInfo}<div style="margin-top:8px;padding-top:8px;border-top:1px solid #eee;"><strong>Location:</strong><br/>Lat: ${b.lat.toFixed(6)}<br/>Lng: ${b.lng.toFixed(6)}</div></div>`);
           m.on('click', () => {
             mapRef.current.setView(pos, Math.max(mapRef.current.getZoom(), 15));
             m.openPopup();
+            try {
+              if (userLocation && (role === 'student' || role === 'staff')) {
+                if (routeLayerRef.current) { try { routeLayerRef.current.remove(); } catch(e){} routeLayerRef.current = null; }
+                const latlngs = [[userLocation.lat, userLocation.lng], [b.lat, b.lng]];
+                routeLayerRef.current = L.polyline(latlngs, { color: '#2563EB', weight: 4, opacity: 0.9 }).addTo(mapRef.current);
+                mapRef.current.fitBounds(routeLayerRef.current.getBounds().pad(0.5));
+              }
+            } catch (e) { console.warn('draw route err', e); }
           });
           markersRef.current[key] = m;
         } catch(err) { console.warn('bus marker add err', err); }

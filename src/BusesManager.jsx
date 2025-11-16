@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiFetch } from './utils/api';
 import BusFormModal from './BusFormModal.jsx';
 import { MapPin } from 'lucide-react';
@@ -13,10 +13,34 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
     const vehiclesList = Array.isArray(vehicles) ? vehicles : Object.values(vehicles || {});
 
     const [showCreateModal, setShowCreateModal] = useState(false);
+    const [showPassengersModal, setShowPassengersModal] = useState(false);
+    const [passengersList, setPassengersList] = useState([]);
+    const [activePassengersBus, setActivePassengersBus] = useState(null);
+    const [usersList, setUsersList] = useState([]);
+    const [passengerEditorOpen, setPassengerEditorOpen] = useState(false);
+    const [passengerEditorSelections, setPassengerEditorSelections] = useState([]);
 
     const addBus = async () => {
         setShowCreateModal(true);
     };
+
+    // load list of users for passenger assignment (admin only)
+    useEffect(() => {
+        let mounted = true;
+        (async () => {
+            try {
+                const res = await apiFetch('/api/users');
+                if (!res.ok) return setUsersList([]);
+                const json = await res.json();
+                const items = Array.isArray(json) ? json : (json.items || []);
+                if (mounted) setUsersList(items.filter(u => u.role === 'student' || u.role === 'staff'));
+            } catch (e) {
+                console.warn('failed to load users for passenger assignment', e);
+                if (mounted) setUsersList([]);
+            }
+        })();
+        return () => { mounted = false; };
+    }, []);
 
     const qLower = (query || '').toLowerCase();
     const filtered = (buses || []).filter(b => {
@@ -49,8 +73,8 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
         const payload = editedRows[busId];
         if (!payload) return;
         try {
-            // Remove MongoDB internal fields, enriched fields (lat, lng, driver names), and clean null values to empty strings for string fields
-            const { _id, __v, createdAt, updatedAt, lat, lng, upDriverName, downDriverName, ...payloadWithoutMeta } = payload;
+            // Remove MongoDB internal fields, enriched fields (lat, lng, driver names), assignedPassengers and counts (managed separately), and clean null values to empty strings for string fields
+            const { _id, __v, createdAt, updatedAt, lat, lng, upDriverName, downDriverName, assignedPassengers, studentCount, staffCount, ...payloadWithoutMeta } = payload;
             const cleanPayload = Object.fromEntries(
                 Object.entries(payloadWithoutMeta).map(([k, v]) => [
                     k,
@@ -143,6 +167,109 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                   }} />
                 )}
 
+                {showPassengersModal && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+                    <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Assigned Passengers</h3>
+                          <p className="text-sm text-gray-500">Bus: {activePassengersBus}</p>
+                        </div>
+                        <button onClick={() => { setShowPassengersModal(false); setPassengersList([]); setActivePassengersBus(null); }} className="text-gray-400 hover:text-gray-600">Close</button>
+                      </div>
+                      <div className="mt-4">
+                        {passengersList.length === 0 ? (
+                          <div className="text-sm text-gray-500">No passengers assigned.</div>
+                        ) : (
+                          <ul className="space-y-2">
+                            {passengersList.map(p => (
+                              <li key={p.userId} className="flex items-center justify-between border rounded p-2">
+                                <div>
+                                  <div className="font-medium text-gray-800">{p.name || p.email}</div>
+                                  <div className="text-xs text-gray-500">{p.email} · {p.role}</div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {passengerEditorOpen && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
+                    <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">Edit Assigned Passengers</h3>
+                          <p className="text-sm text-gray-500">Bus: {activePassengersBus}</p>
+                        </div>
+                        <button onClick={() => { setPassengerEditorOpen(false); setPassengerEditorSelections([]); setActivePassengersBus(null); }} className="text-gray-400 hover:text-gray-600">Close</button>
+                      </div>
+
+                      <div className="mt-4">
+                        <p className="text-sm text-gray-600 mb-2">Select students and staff to assign to this bus.</p>
+                        <div className="border rounded p-3 max-h-72 overflow-auto">
+                          {usersList.length === 0 ? (
+                            <div className="text-sm text-gray-500">No users available.</div>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {usersList.map(u => {
+                                const uid = String(u._id || u.id);
+                                const checked = passengerEditorSelections.includes(uid);
+                                return (
+                                  <label key={uid} className="flex items-center space-x-2 p-2 border rounded">
+                                    <input type="checkbox" checked={checked} onChange={(e) => {
+                                      setPassengerEditorSelections(prev => {
+                                        if (e.target.checked) return [...prev, uid];
+                                        return prev.filter(x => x !== uid);
+                                      });
+                                    }} className="h-4 w-4" />
+                                    <div>
+                                      <div className="font-medium text-gray-800">{u.name || u.email}</div>
+                                      <div className="text-xs text-gray-500">{u.email} · {u.role}</div>
+                                    </div>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex justify-end space-x-2 mt-4">
+                          <button onClick={() => { setPassengerEditorOpen(false); setPassengerEditorSelections([]); setActivePassengersBus(null); }} className="px-4 py-2 bg-gray-100 rounded">Cancel</button>
+                          <button onClick={async () => {
+                            try {
+                              const payload = { assignedPassengerIds: passengerEditorSelections };
+                              const res = await apiFetch(`/api/buses/${activePassengersBus}/passengers`, { method: 'PUT', body: JSON.stringify(payload) });
+                              if (!res.ok) {
+                                const txt = await res.text();
+                                console.error('failed to save passengers', txt);
+                                alert(`Failed to save: ${txt}`);
+                                return;
+                              }
+                              const json = await res.json();
+                              if (json && json.bus) {
+                                setBuses(prev => {
+                                  const updated = prev.map(b => b.id === json.bus.id ? json.bus : b);
+                                  onChange && onChange(updated);
+                                  return updated;
+                                });
+                              }
+                              setPassengerEditorOpen(false);
+                              setPassengerEditorSelections([]);
+                              setActivePassengersBus(null);
+                            } catch (e) {
+                              console.warn('save passengers failed', e);
+                              alert('Failed to save passengers. Check console.');
+                            }
+                          }} className="px-4 py-2 bg-indigo-600 text-white rounded">Save</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* --- Enhanced Table Structure --- */}
                 <div className="bg-white rounded-xl shadow-2xl border border-gray-200 overflow-x-auto overflow-y-auto max-h-[70vh]">
                     <table className="min-w-full divide-y divide-gray-200">
@@ -157,6 +284,11 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                 <th className={`${tableHeaderClass} w-48`}>Down Driver</th>
                                 <th className={tableHeaderClass}>Route</th>
                                 <th className={tableHeaderClass}>Departure</th>
+                                <th className={tableHeaderClass}>Stops</th>
+                                <th className={tableHeaderClass}>Serves Students</th>
+                                <th className={tableHeaderClass}>Serves Staff</th>
+                                <th className={tableHeaderClass}>Students</th>
+                                <th className={tableHeaderClass}>Staff</th>
                                 <th className={tableHeaderClass}>Actions</th>
                             </tr>
                         </thead>
@@ -230,6 +362,59 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                                 className={`py-1 ${inputClass} w-24 text-sm`} 
                                             />
                                         </td>
+
+                                        {/* Stops */}
+                                        <td className={tableDataClass}>
+                                            {!editedRows[b.id] ? (
+                                              <div className="text-sm text-gray-600">{Array.isArray(b.stops) && b.stops.length ? b.stops.join(', ') : '—'}</div>
+                                            ) : (
+                                              <input
+                                                type="text"
+                                                value={(editedRows[b.id]?.stops ?? (Array.isArray(b.stops) ? b.stops.join(', ') : ''))}
+                                                onChange={(e) => updateField(b.id, 'stops', e.target.value)}
+                                                placeholder="Comma-separated stops"
+                                                className={`py-1 ${inputClass} text-sm`}
+                                              />
+                                            )}
+                                        </td>
+
+                                        {/* flags: serves students / staff */}
+                                        <td className={tableDataClass}>
+                                          {!editedRows[b.id] ? (
+                                            <span className={`px-2 py-1 rounded-full text-xs ${b.studentBus ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-gray-50 text-gray-500'}`}>
+                                              {b.studentBus ? 'Yes' : 'No'}
+                                            </span>
+                                          ) : (
+                                            <label className="inline-flex items-center space-x-2">
+                                              <input type="checkbox" checked={!!(editedRows[b.id]?.studentBus)} onChange={(e) => updateField(b.id, 'studentBus', e.target.checked)} className="h-4 w-4" />
+                                              <span className="text-sm text-gray-700">Students</span>
+                                            </label>
+                                          )}
+                                        </td>
+                                        <td className={tableDataClass}>
+                                          {!editedRows[b.id] ? (
+                                            <span className={`px-2 py-1 rounded-full text-xs ${b.staffBus ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-gray-50 text-gray-500'}`}>
+                                              {b.staffBus ? 'Yes' : 'No'}
+                                            </span>
+                                          ) : (
+                                            <label className="inline-flex items-center space-x-2">
+                                              <input type="checkbox" checked={!!(editedRows[b.id]?.staffBus)} onChange={(e) => updateField(b.id, 'staffBus', e.target.checked)} className="h-4 w-4" />
+                                              <span className="text-sm text-gray-700">Staff</span>
+                                            </label>
+                                          )}
+                                        </td>
+
+                                        {/* student/staff counts */}
+                                        <td className={`${tableDataClass} text-center`}>
+                                          <span className="inline-flex items-center justify-center px-2 py-1 rounded-full bg-blue-50 text-blue-700 text-sm font-medium">
+                                            {b.studentCount ?? (Array.isArray(b.assignedPassengers) ? b.assignedPassengers.filter(p => p.role === 'student').length : 0)}
+                                          </span>
+                                        </td>
+                                        <td className={`${tableDataClass} text-center`}>
+                                          <span className="inline-flex items-center justify-center px-2 py-1 rounded-full bg-purple-50 text-purple-700 text-sm font-medium">
+                                            {b.staffCount ?? (Array.isArray(b.assignedPassengers) ? b.assignedPassengers.filter(p => p.role === 'staff').length : 0)}
+                                          </span>
+                                        </td>
                                         {/* Actions */}
                                         <td className={tableDataClass}>
                                             {!editedRows[b.id] ? (
@@ -244,6 +429,32 @@ export default function BusesManager({ busesProp = [], drivers = [], routes = []
                                                   </button>
                                                 )}
                                                 <button onClick={() => startEdit(b.id)} className="px-2 py-1 bg-yellow-50 text-yellow-700 rounded">Edit</button>
+                                                <button onClick={async () => {
+                                                    try {
+                                                      setActivePassengersBus(b.id);
+                                                      const res = await apiFetch(`/api/buses/${b.id}/passengers`);
+                                                      if (!res.ok) {
+                                                        const txt = await res.text();
+                                                        console.error('failed to load passengers', txt);
+                                                        setPassengersList([]);
+                                                      } else {
+                                                        const json = await res.json();
+                                                        setPassengersList(Array.isArray(json.items) ? json.items : []);
+                                                      }
+                                                      setShowPassengersModal(true);
+                                                    } catch (e) {
+                                                      console.warn('load passengers failed', e);
+                                                      setPassengersList([]);
+                                                      setShowPassengersModal(true);
+                                                    }
+                                                }} className="px-2 py-1 bg-blue-50 text-blue-600 rounded">Passengers</button>
+                                                <button onClick={() => {
+                                                    // open passenger editor modal prefilled with current assigned passengers
+                                                    const preSelected = Array.isArray(b.assignedPassengers) ? b.assignedPassengers.map(p => String(p.userId)) : [];
+                                                    setPassengerEditorSelections(preSelected);
+                                                    setActivePassengersBus(b.id);
+                                                    setPassengerEditorOpen(true);
+                                                }} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded">Manage</button>
                                                 <button onClick={async () => {
                                                     try {
                                                         await apiFetch(`/api/buses/${b.id}`, { method: 'DELETE' });

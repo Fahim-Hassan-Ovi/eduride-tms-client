@@ -260,6 +260,10 @@ function App() {
 
 
   useEffect(() => {
+    // keep isLoggedIn synced with token and currentUser so refresh doesn't log out
+    if (token && currentUser) setIsLoggedIn(true);
+    else setIsLoggedIn(false);
+
     if (!isLoggedIn) return;
 
     const interval = setInterval(() => {
@@ -315,10 +319,23 @@ function App() {
   };
 
   const handleLogout = () => {
+    // Clear client auth and related state
     setIsLoggedIn(false);
+    setToken('');
+    localStorage.removeItem('tms_token');
+    setCurrentUser(null);
+    localStorage.removeItem('tms_user');
     setUsername('');
     setPassword('');
     setErrors({ username: '', password: '' });
+    setRole('student');
+    setBuses([]);
+    setUsers([]);
+    setVehicles({});
+    setActivePage('live');
+    // stop any driver location watch if active
+    try { if (watchId != null && navigator.geolocation) navigator.geolocation.clearWatch(watchId); } catch (e) { /* ignore */ }
+    setWatchId(null);
   };
 
   // Calculate distance between two coordinates (Haversine formula)
@@ -358,15 +375,25 @@ function App() {
       const data = await res.json();
       if (!res.ok) return { ok: false, error: data.error || 'Failed to update request' };
       setBusRequestVersion(v => v + 1);
+      // refresh buses list in case the request assignedPassengers were merged into a Bus
+      try {
+        const bRes = await apiFetch('/api/buses');
+        if (bRes.ok) {
+          const bJson = await bRes.json();
+          setBuses(Array.isArray(bJson) ? bJson : (bJson.items || []));
+        }
+      } catch (e) {
+        console.warn('Failed to refresh buses after request update', e);
+      }
       return { ok: true, data };
     } catch (err) {
       return { ok: false, error: err.message };
     }
   };
 
-  // Get nearby buses for students
+  // Get nearby buses for students and staff
   const getNearbyBuses = () => {
-    if (!userLocation || role !== 'student') return [];
+    if (!userLocation || !(role === 'student' || role === 'staff')) return [];
     return buses.filter(b => {
       if (!b.lat || !b.lng) return false;
       const distance = calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng);
@@ -412,9 +439,22 @@ function App() {
   };
 
   const getFilteredVehicles = () => {
+    // If admin or viewMode all -> show all vehicles
     if (role === 'admin' || viewMode === 'all') {
       return Array.isArray(vehicles) ? vehicles : Object.values(vehicles);
     }
+
+    // For assigned view: return vehicles/buses assigned to current user (student/staff)
+    if (viewMode === 'assigned' && currentUser) {
+      const uid = String(currentUser._id || currentUser.id || '');
+      // find buses assigned to this user
+      const assignedBuses = (Array.isArray(buses) ? buses : []).filter(b => Array.isArray(b.assignedPassengers) && b.assignedPassengers.some(p => String(p.userId) === uid));
+      // Map assigned buses to vehicle-like objects for the map
+      const mapped = assignedBuses.map(b => ({ id: b.id, name: b.plate || b.id, lat: b.lat, lng: b.lng, type: 'bus', route: b.route, upDriverName: b.upDriverName, downDriverName: b.downDriverName }));
+      return mapped;
+    }
+
+    // Fallback: return small subset
     return (Array.isArray(vehicles) ? vehicles : Object.values(vehicles)).slice(0, 1);
   };
 
@@ -687,19 +727,18 @@ function App() {
                       ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg'
                       : 'bg-white/60 text-slate-700 hover:bg-white/70'
                   } ${role === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  title={viewMode === 'assigned' ? 'Active: My Assigned Vehicles' : 'Show my assigned vehicles'}
                 >
                   <User className="w-5 h-5" />
                   <span className="font-medium text-sm">My Assigned Vehicles</span>
                 </button>
 
+                {/* Find Nearby Vehicles button hidden per request */}
                 <button
                   onClick={() => setViewMode('all')}
                   disabled={role !== 'admin'}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${
-                    viewMode === 'all' || role === 'admin'
-                      ? 'bg-gradient-to-r from-indigo-600 to-sky-600 text-white shadow-lg'
-                      : 'bg-white/60 text-slate-700 hover:bg-white/70'
-                  } ${role !== 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className="hidden"
+                  title={viewMode === 'all' ? 'Active: Find Nearby Vehicles' : 'Find nearby vehicles'}
                 >
                   <Users className="w-5 h-5" />
                   <span className="font-medium text-sm">Find Nearby Vehicles</span>
@@ -738,16 +777,16 @@ function App() {
                 {/* Complaint buttons */}
                 {role === 'student' && (
                   <>
-                    <button onClick={() => setActivePage('busRequests')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('busRequests')} title={activePage === 'busRequests' ? 'Active: Bus Requests' : 'Open Bus Requests'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'busRequests' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Bus Requests</span>
                     </button>
-                    <button onClick={() => setActivePage('submitComplaint')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('submitComplaint')} title={activePage === 'submitComplaint' ? 'Active: Submit Complaint' : 'Submit Complaint'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'submitComplaint' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Submit Complaint</span>
                     </button>
-                    <button onClick={() => setActivePage('payments')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('payments')} title={activePage === 'payments' ? 'Active: Payments & Card' : 'Payments & Card'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'payments' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Payments &amp; Card</span>
                     </button>
-                    <button onClick={() => setActivePage('myComplaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('myComplaints')} title={activePage === 'myComplaints' ? 'Active: My Complaints' : 'My Complaints'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'myComplaints' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">My Complaints</span>
                     </button>
                   </>
@@ -755,25 +794,25 @@ function App() {
 
                 {role === 'admin' && (
                   <div className="space-y-2">
-                    <button onClick={() => setActivePage('complaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('complaints')} title={activePage === 'complaints' ? 'Active: Complaints' : 'Complaints'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'complaints' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Complaints</span>
                     </button>
-                    <button onClick={() => setActivePage('buses')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('buses')} title={activePage === 'buses' ? 'Active: Manage Buses' : 'Manage Buses'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'buses' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Manage Buses</span>
                     </button>
-                    <button onClick={() => setActivePage('routes')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('routes')} title={activePage === 'routes' ? 'Active: Manage Routes' : 'Manage Routes'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'routes' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Manage Routes</span>
                     </button>
-                    <button onClick={() => setActivePage('vehicles')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('vehicles')} title={activePage === 'vehicles' ? 'Active: Manage Vehicles' : 'Manage Vehicles'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'vehicles' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Manage Vehicles</span>
                     </button>
-                    <button onClick={() => setActivePage('users')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('users')} title={activePage === 'users' ? 'Active: Manage Users' : 'Manage Users'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'users' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Manage Users</span>
                     </button>
-                    <button onClick={() => setActivePage('busRequestsAdmin')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('busRequestsAdmin')} title={activePage === 'busRequestsAdmin' ? 'Active: Bus Requests' : 'Bus Requests'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'busRequestsAdmin' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Bus Requests</span>
                     </button>
-                    <button onClick={() => setActivePage('paymentsAdmin')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('paymentsAdmin')} title={activePage === 'paymentsAdmin' ? 'Active: Payments Overview' : 'Payments Overview'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'paymentsAdmin' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Payments Overview</span>
                     </button>
                   </div>
@@ -781,13 +820,13 @@ function App() {
 
                 {role === 'staff' && (
                   <div className="space-y-2">
-                    <button onClick={() => setActivePage('busRequests')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('busRequests')} title={activePage === 'busRequests' ? 'Active: Bus Requests' : 'Open Bus Requests'} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'busRequests' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Bus Requests</span>
                     </button>
-                    <button onClick={() => setActivePage('complaints')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('complaints')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'complaints' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Complaints</span>
                     </button>
-                    <button onClick={() => setActivePage('paymentsAdmin')} className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-white/60 text-slate-700 hover:bg-white/70">
+                    <button onClick={() => setActivePage('paymentsAdmin')} className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${activePage === 'paymentsAdmin' ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg' : 'bg-white/60 text-slate-700 hover:bg-white/70'}`}>
                       <span className="font-medium text-sm">Payments Overview</span>
                     </button>
                   </div>
@@ -882,9 +921,9 @@ function App() {
                     import.meta.env.VITE_MAP_PROVIDER === 'google'
                       ? <GoogleMapDev vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
                       : <LeafletMap 
-                          vehicles={role === 'student' ? [] : getFilteredVehicles()} 
+                          vehicles={role === 'driver' ? [] : getFilteredVehicles()} 
                           buses={
-                            role === 'student' && userLocation 
+                            (role === 'student' || role === 'staff') && userLocation 
                               ? getNearbyBuses() 
                               : role === 'driver' 
                                 ? buses.filter(b => {
@@ -897,12 +936,14 @@ function App() {
                           drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} 
                           routes={mockRoutes} 
                           center={userLocation || { lat: 40.75, lng: -73.99 }} 
+                          userLocation={userLocation}
+                          role={role}
                         />
                   }
                 </div>
 
                 <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-                  {role === 'student' && userLocation ? (
+                  {(role === 'student' || role === 'staff') && userLocation ? (
                     <div>
                       <h3 className="text-sm font-semibold text-gray-700 mb-3">Nearby Buses ({getNearbyBuses().length})</h3>
                       {getNearbyBuses().length === 0 ? (

@@ -9,6 +9,8 @@ export default function BusFormModal({ vehicles = [], routes = [], existingBusId
   const [capacity, setCapacity] = useState(40);
   const [route, setRoute] = useState(routes[0]?.name || '');
   const [departure, setDeparture] = useState('08:00');
+  const [studentBus, setStudentBus] = useState(false);
+  const [staffBus, setStaffBus] = useState(false);
 
   // Replaced alert() with console.warn since alert() is not supported in the live environment
   const submit = (e) => {
@@ -34,7 +36,9 @@ export default function BusFormModal({ vehicles = [], routes = [], existingBusId
       upDriver: '', 
       downDriver: '', 
       route: route || '', 
-      departure: departure || '' 
+      departure: departure || '',
+      studentBus: !!studentBus,
+      staffBus: !!staffBus
     };
     onSubmit && onSubmit(bus);
   };
@@ -110,6 +114,17 @@ export default function BusFormModal({ vehicles = [], routes = [], existingBusId
                 onChange={(e) => setDeparture(e.target.value)} 
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500" 
               />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            <div className="flex items-center space-x-2">
+              <input id="studentBus" type="checkbox" checked={studentBus} onChange={(e) => setStudentBus(e.target.checked)} className="h-4 w-4" />
+              <label htmlFor="studentBus" className="text-sm text-gray-700">Serves Students</label>
+            </div>
+            <div className="flex items-center space-x-2">
+              <input id="staffBus" type="checkbox" checked={staffBus} onChange={(e) => setStaffBus(e.target.checked)} className="h-4 w-4" />
+              <label htmlFor="staffBus" className="text-sm text-gray-700">Serves Staff</label>
             </div>
           </div>
 
