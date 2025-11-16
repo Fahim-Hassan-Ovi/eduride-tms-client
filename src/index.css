@@ -1,3 +1,52 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Custom UI polish */
+.glass-card {
+  background: rgba(255,255,255,0.6);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.map-placeholder {
+  background: linear-gradient(180deg, #e6eef9 0%, #dfeefa 30%, #cfe6f4 100%);
+  background-size: 200% 200%;
+  position: relative;
+  overflow: hidden;
+}
+
+.map-wave {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at 20% 20%, rgba(0,0,0,0.02) 0, transparent 10%),
+                    radial-gradient(circle at 80% 80%, rgba(0,0,0,0.02) 0, transparent 8%);
+  pointer-events: none;
+}
+
+.map-marker {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(20,40,80,0.12);
+  transform: translate(-50%, -50%);
+}
+
+.marker-pin {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15) inset;
+}
+
+@keyframes mapPan {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 50% 50%; }
+  100% { background-position: 0% 0%; }
+}
+
+.map-placeholder.animate { animation: mapPan 14s ease-in-out infinite; }
