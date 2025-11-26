@@ -698,7 +698,7 @@ function App() {
                 <Bus className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold">EduRide Management System Dashboard</h1>
+                <h1 className="text-xl font-bold">EduRide Transport Management System Dashboard</h1>
                 <p className="text-sm opacity-80">Real-time vehicle tracking & operations</p>
               </div>
             </div>
