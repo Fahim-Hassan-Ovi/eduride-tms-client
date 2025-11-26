@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import UserFormModal from './UserFormModal.jsx';
 import UserViewModal from './UserViewModal.jsx';
 import { apiFetch } from './utils/api';
-import { Eye, Pencil } from 'lucide-react';
+import { Eye, Pencil, Trash } from 'lucide-react';
 
 const roles = ['student','teacher','admin','staff','driver'];
 
@@ -101,6 +101,25 @@ export default function UserAccess({ token }) {
     }
   };
 
+  const deleteUser = async (userId) => {
+  if (!confirm("Are you sure you want to delete this user?")) return;
+
+  try {
+    const res = await apiFetch(`/api/users/${userId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('delete user failed:', res.status, text);
+      alert('Failed to delete user');
+      return;
+    }
+
+    setUsers(prev => prev.filter(u => (u._id || u.id) !== userId));
+  } catch (e) {
+    console.warn('delete user failed', e);
+    alert('Failed to delete. Check console.');
+  }
+};
+
   const filteredUsers = users.filter(u => {
     const q = query.toLowerCase();
     return (u.name || '').toLowerCase().includes(q) || 
@@ -168,6 +187,13 @@ export default function UserAccess({ token }) {
                         title="Edit user"
                       >
                         <Pencil className="w-4 h-4" />
+                      </button>
+                      <button 
+                      onClick={() => deleteUser(userId)}
+                        className="p-2 rounded-md bg-red-50 text-red-600 hover:bg-yellow-100"
+                        title="Edit user"
+                      >
+                        <Trash className="w-4 h-4" />
                       </button>
                     </div>
                   </td>

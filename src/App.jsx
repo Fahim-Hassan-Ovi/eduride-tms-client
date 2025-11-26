@@ -1,25 +1,22 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MapPin, User, Bus, LogOut, Users, Navigation } from 'lucide-react';
-import LocationModal from './LocationModal.jsx';
 import Registration from './Registration.jsx';
-import Profile from './Profile.jsx';
 import BusesManager from './BusesManager.jsx';
 import RoutesManager from './RoutesManager.jsx';
 import SubmitComplaint from './SubmitComplaint.jsx';
 import ComplaintsAdmin from './ComplaintsAdmin.jsx';
 import StudentComplaints from './StudentComplaints.jsx';
-import PaySemester from './PaySemester.jsx';
 import PaymentSuccess from './PaymentSuccess.jsx';
-import LeafletMap from './LeafletMap.jsx';
-import GoogleMapDev from './GoogleMapDev.jsx';
 import VehicleManager from './VehicleManager.jsx';
 import UserAccess from './UserAccess.jsx';
 import StudentPayments from './StudentPayments.jsx';
 import PaymentsAdmin from './PaymentsAdmin.jsx';
 import BusRequestsBoard from './BusRequestsBoard.jsx';
 import BusRequestsAdmin from './BusRequestsAdmin.jsx';
+import { Eye, EyeOff } from "lucide-react";
 
 function App() {
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [role, setRole] = useState('student');
   const [username, setUsername] = useState('');
@@ -29,8 +26,6 @@ function App() {
   const [viewMode, setViewMode] = useState('assigned');
   const [nearbySearchRadius, setNearbySearchRadius] = useState(5); // km
 
-  // location modal and user location
-  const [showLocationModal, setShowLocationModal] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
   const [watchId, setWatchId] = useState(null);
 
@@ -77,7 +72,7 @@ function App() {
   // auth
   const [token, setToken] = useState(() => localStorage.getItem('tms_token') || '');
   const [currentUser, setCurrentUser] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('tms_user') || 'null'); } catch(e){ return null; }
+    try { return JSON.parse(localStorage.getItem('tms_user') || 'null'); } catch (e) { return null; }
   });
 
   const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000';
@@ -209,13 +204,13 @@ function App() {
           apiFetch('/api/buses'),
           apiFetch('/api/complaints'),
         ]);
-        
+
         // Parse JSON only if response is ok
         const vJson = vRes.ok ? await vRes.json() : [];
         const rJson = rRes.ok ? await rRes.json() : { items: [] };
         const bJson = bRes.ok ? await bRes.json() : { items: [] };
         const cJson = cRes.ok ? await cRes.json() : { items: [] };
-        
+
         // Handle users endpoint - may return 403 for non-admin users
         let uJson = { items: [] };
         if (uRes.ok) {
@@ -224,16 +219,16 @@ function App() {
           // For non-admin users, set empty array (they don't need to see all users)
           console.warn('Users endpoint returned:', uRes.status, 'Setting users to empty array');
         }
-        
+
         // vehicles API returns { items, page } or plain array depending on auth; normalize
         const vItems = Array.isArray(vJson) ? vJson : (vJson.items || []);
         setVehicles(vItems);
         setRoutes(Array.isArray(rJson) ? rJson : (rJson.items || []));
-        
+
         // Ensure users is always an array
         const usersData = Array.isArray(uJson) ? uJson : (uJson.items || []);
         setUsers(Array.isArray(usersData) ? usersData : []);
-        
+
         setBuses(Array.isArray(bJson) ? bJson : (bJson.items || []));
         setComplaints(Array.isArray(cJson) ? cJson : (cJson.items || []));
       } catch (err) {
@@ -243,7 +238,7 @@ function App() {
       }
     };
     load();
-    
+
     // Refresh bus locations every 5 seconds to get updated driver locations
     const interval = setInterval(async () => {
       try {
@@ -254,7 +249,7 @@ function App() {
         console.warn('Error refreshing bus locations', err);
       }
     }, 5000);
-    
+
     return () => clearInterval(interval);
   }, [token]);
 
@@ -311,7 +306,6 @@ function App() {
       localStorage.setItem('tms_user', JSON.stringify(data.user));
       setRole(data.user.role || selectedRole);
       setIsLoggedIn(true);
-      setShowLocationModal(true);
       setActivePage('live');
     } catch (err) {
       setErrors({ ...newErrors, username: err.message });
@@ -343,11 +337,11 @@ function App() {
     const R = 6371; // Earth's radius in km
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
       Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-      Math.sin(dLng/2) * Math.sin(dLng/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   };
 
@@ -418,10 +412,10 @@ function App() {
     // Get vehicles with location (for backward compatibility)
     const vehiclesWithLocation = (Array.isArray(vehicles) ? vehicles : Object.values(vehicles))
       .filter(v => v.lat && v.lng);
-    
+
     // Get active buses (with assigned drivers and location)
     const activeBuses = getActiveBuses();
-    
+
     // Combine and format buses as vehicles for display
     const busesAsVehicles = activeBuses.map(bus => ({
       id: bus.id,
@@ -433,7 +427,7 @@ function App() {
       upDriverName: bus.upDriverName,
       downDriverName: bus.downDriverName
     }));
-    
+
     // Combine vehicles and buses
     return [...vehiclesWithLocation, ...busesAsVehicles];
   };
@@ -476,16 +470,16 @@ function App() {
 
   const handleRegister = async (user, password) => {
     try {
-      const res = await apiFetch('/api/auth/register', { 
-        method: 'POST', 
-        body: JSON.stringify({ 
-          email: user.email, 
-          password, 
-          name: user.name, 
+      const res = await apiFetch('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: user.email,
+          password,
+          name: user.name,
           role: user.role || 'student',
           phone: user.phone || '',
           picture: user.picture || ''
-        }) 
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Register failed');
@@ -494,7 +488,6 @@ function App() {
       setCurrentUser(data.user);
       localStorage.setItem('tms_user', JSON.stringify(data.user));
       setIsLoggedIn(true);
-      setShowLocationModal(true);
     } catch (e) {
       alert('Register failed: ' + e.message);
     }
@@ -510,14 +503,14 @@ function App() {
   const startDriverWatch = async (coords) => {
     setUserLocation(coords);
     if (role !== 'driver') return;
-    
+
     // Update user location in backend (using current user's ID)
     const userId = currentUser?.id;
     if (!userId) {
       console.warn('User ID not found');
       return;
     }
-    
+
     try {
       const res = await apiFetch(`/api/users/${userId}/location`, {
         method: 'PUT',
@@ -530,14 +523,14 @@ function App() {
     } catch (e) {
       console.warn('Failed to update user location in backend:', e);
     }
-    
+
     // Find bus assigned to this driver (using email)
     const userEmail = currentUser?.email;
     const assignedBus = buses.find(b => b.upDriver === userEmail || b.downDriver === userEmail);
     if (assignedBus) {
       // Update bus location in local state (will be refreshed from API)
-      setBuses(prev => prev.map(b => 
-        (b.id === assignedBus.id) 
+      setBuses(prev => prev.map(b =>
+        (b.id === assignedBus.id)
           ? { ...b, lat: coords.lat, lng: coords.lng }
           : b
       ));
@@ -547,7 +540,7 @@ function App() {
     const id = navigator.geolocation.watchPosition(async (pos) => {
       const newCoords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       setUserLocation(newCoords);
-      
+
       // Update backend
       try {
         const res = await apiFetch(`/api/users/${userId}/location`, {
@@ -561,11 +554,11 @@ function App() {
       } catch (e) {
         console.warn('Failed to update user location in backend:', e);
       }
-      
+
       // Update bus location in local state
       if (assignedBus) {
-        setBuses(prev => prev.map(b => 
-          (b.id === assignedBus.id) 
+        setBuses(prev => prev.map(b =>
+          (b.id === assignedBus.id)
             ? { ...b, lat: newCoords.lat, lng: newCoords.lng }
             : b
         ));
@@ -579,7 +572,7 @@ function App() {
       navigator.geolocation.clearWatch(watchId);
       setWatchId(null);
     }
-    
+
     // Clear location from backend
     const userId = currentUser?.id;
     if (userId && role === 'driver') {
@@ -610,6 +603,7 @@ function App() {
     }
   };
 
+
   if (!isLoggedIn) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-slate-100 flex items-center justify-center p-4">
@@ -622,7 +616,7 @@ function App() {
             </div>
 
             <h1 className="text-3xl font-bold text-center text-gray-800 mb-2">
-              Transport Management
+              EduRide Management System
             </h1>
             <p className="text-center text-gray-500 mb-8">Sign in to access the dashboard</p>
 
@@ -642,15 +636,31 @@ function App() {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                    placeholder="Enter your password"
-                  />
-                  {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
+
+                  <div className="relative">
+                    <input
+                      type={passwordVisible ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
+                      placeholder="Enter your password"
+                    />
+
+                    {/* Eye Icon Button */}
+                    <button
+                      type="button"
+                      onClick={() => setPasswordVisible(!passwordVisible)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                    >
+                      {passwordVisible ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+
+                  {errors.password && (
+                    <p className="text-red-500 text-sm mt-1">{errors.password}</p>
+                  )}
                 </div>
+
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">Select Role</label>
@@ -688,7 +698,7 @@ function App() {
                 <Bus className="w-6 h-6 text-white" />
               </div>
               <div>
-                <h1 className="text-xl font-bold">TMS Dashboard</h1>
+                <h1 className="text-xl font-bold">EduRide Management System Dashboard</h1>
                 <p className="text-sm opacity-80">Real-time vehicle tracking & operations</p>
               </div>
             </div>
@@ -722,11 +732,10 @@ function App() {
                 <button
                   onClick={() => setViewMode('assigned')}
                   disabled={role === 'admin'}
-                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${
-                    viewMode === 'assigned' && role !== 'admin'
-                      ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg'
-                      : 'bg-white/60 text-slate-700 hover:bg-white/70'
-                  } ${role === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition transform hover:-translate-y-0.5 ${viewMode === 'assigned' && role !== 'admin'
+                    ? 'bg-gradient-to-r from-indigo-500 to-blue-600 text-white shadow-lg'
+                    : 'bg-white/60 text-slate-700 hover:bg-white/70'
+                    } ${role === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}`}
                   title={viewMode === 'assigned' ? 'Active: My Assigned Vehicles' : 'Show my assigned vehicles'}
                 >
                   <User className="w-5 h-5" />
@@ -747,15 +756,15 @@ function App() {
                 {role === 'driver' && (
                   <div className="space-y-2">
                     {watchId != null ? (
-                      <button 
-                        onClick={stopDriverWatch} 
+                      <button
+                        onClick={stopDriverWatch}
                         className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-red-600 text-white hover:bg-red-700"
                       >
                         <MapPin className="w-5 h-5" />
                         <span className="font-medium text-sm">Stop Location Tracking</span>
                       </button>
                     ) : (
-                      <button 
+                      <button
                         onClick={() => {
                           if (navigator.geolocation) {
                             navigator.geolocation.getCurrentPosition(
@@ -765,7 +774,7 @@ function App() {
                           } else {
                             alert('Geolocation is not supported by your browser');
                           }
-                        }} 
+                        }}
                         className="w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition bg-green-600 text-white hover:bg-green-700"
                       >
                         <MapPin className="w-5 h-5" />
@@ -891,105 +900,6 @@ function App() {
           </div>
 
           <div className="lg:col-span-3">
-            {activePage === 'live' && (
-              <div className="bg-white/60 glass-card rounded-2xl shadow-2xl overflow-hidden">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
-                      <MapPin className="w-5 h-5" />
-                      <span>Live Vehicle Tracking</span>
-                    </h2>
-                    {role === 'student' && userLocation && (
-                      <div className="flex items-center space-x-2">
-                        <label className="text-white text-sm">Search radius:</label>
-                        <select 
-                          value={nearbySearchRadius} 
-                          onChange={(e) => setNearbySearchRadius(Number(e.target.value))}
-                          className="px-2 py-1 rounded bg-white/20 text-white border border-white/30"
-                        >
-                          <option value={1} className="text-gray-800">1 km</option>
-                          <option value={3} className="text-gray-800">3 km</option>
-                          <option value={5} className="text-gray-800">5 km</option>
-                          <option value={10} className="text-gray-800">10 km</option>
-                        </select>
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="relative h-96">
-                  {
-                    import.meta.env.VITE_MAP_PROVIDER === 'google'
-                      ? <GoogleMapDev vehicles={getFilteredVehicles()} routes={mockRoutes} center={{ lat: 40.75, lng: -73.99 }} />
-                      : <LeafletMap 
-                          vehicles={role === 'driver' ? [] : getFilteredVehicles()} 
-                          buses={
-                            (role === 'student' || role === 'staff') && userLocation 
-                              ? getNearbyBuses() 
-                              : role === 'driver' 
-                                ? buses.filter(b => {
-                                    // Show driver's assigned bus if it has location
-                                    const userEmail = currentUser?.email;
-                                    return (b.upDriver === userEmail || b.downDriver === userEmail) && b.lat && b.lng;
-                                  })
-                                : buses.filter(b => b.lat && b.lng)
-                          } 
-                          drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} 
-                          routes={mockRoutes} 
-                          center={userLocation || { lat: 40.75, lng: -73.99 }} 
-                          userLocation={userLocation}
-                          role={role}
-                        />
-                  }
-                </div>
-
-                <div className="bg-gray-50 px-6 py-4 border-t border-gray-200">
-                  {(role === 'student' || role === 'staff') && userLocation ? (
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-700 mb-3">Nearby Buses ({getNearbyBuses().length})</h3>
-                      {getNearbyBuses().length === 0 ? (
-                        <p className="text-sm text-gray-500">No buses found within {nearbySearchRadius} km</p>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                          {getNearbyBuses().slice(0, 6).map(b => {
-                            const distance = calculateDistance(userLocation.lat, userLocation.lng, b.lat, b.lng);
-                            return (
-                              <div key={b.id} className="bg-white p-3 rounded-lg border border-gray-200">
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <p className="font-medium text-sm">{b.plate || b.id}</p>
-                                    <p className="text-xs text-gray-500">{b.route || 'No route'}</p>
-                                  </div>
-                                  <div className="text-right">
-                                    <p className="text-xs font-semibold text-blue-600">{distance.toFixed(1)} km</p>
-                                    <p className="text-xs text-gray-500">away</p>
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-blue-600">{getActiveVehicles().length}</p>
-                        <p className="text-xs text-gray-600">Active Vehicles</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-green-600">100%</p>
-                        <p className="text-xs text-gray-600">Online Status</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-2xl font-bold text-purple-600">Live</p>
-                        <p className="text-xs text-gray-600">Update Mode</p>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
             {activePage === 'submitComplaint' && (
               <SubmitComplaint drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} studentName={username} onSubmit={addComplaint} onBack={() => setActivePage('live')} />
             )}
@@ -1012,12 +922,12 @@ function App() {
               <ComplaintsAdmin complaints={complaints} onUpdate={updateComplaintFeedback} onBack={() => setActivePage('live')} token={token} />
             )}
             {activePage === 'buses' && (
-              <BusesManager 
-                busesProp={buses} 
-                drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []} 
-                routes={routes} 
-                vehicles={vehicles} 
-                token={token} 
+              <BusesManager
+                busesProp={buses}
+                drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []}
+                routes={routes}
+                vehicles={vehicles}
+                token={token}
                 onChange={(updated) => setBuses(updated)}
                 onNavigateToBus={(lat, lng) => {
                   setActivePage('live');
@@ -1032,9 +942,9 @@ function App() {
               <RoutesManager routesProp={routes} token={token} onChange={(updated) => setRoutes(updated)} />
             )}
             {activePage === 'vehicles' && (
-              <VehicleManager 
-                vehiclesProp={vehicles} 
-                token={token} 
+              <VehicleManager
+                vehiclesProp={vehicles}
+                token={token}
                 onChange={(updated) => setVehicles(updated)}
                 drivers={Array.isArray(users) ? users.filter(u => u.role === 'driver') : []}
                 routes={routes}
@@ -1078,12 +988,6 @@ function App() {
           </div>
         </div>
       </div>
-      {showLocationModal && (
-        <LocationModal
-          onAllow={(coords) => { setUserLocation(coords); setShowLocationModal(false); startDriverWatch(coords); }}
-          onDismiss={() => setShowLocationModal(false)}
-        />
-      )}
     </div>
   );
 }
